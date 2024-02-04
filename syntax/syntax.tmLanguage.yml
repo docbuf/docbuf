@@ -1,0 +1,61 @@
+name: DocBuf
+file_extensions:
+      - docbuf
+      - dbuf
+      - docb
+      - doc
+      - db
+scope: source.docbuf
+contexts:
+      main:
+            - include: pragma
+            - include: comments
+            - include: options
+            - include: option-fields
+            - include: declarations
+            - include: field-declarations
+      pragma:
+            - match: docbuf\s+v\d+(\.\d+)?\s*;
+              scope: support.docbuf
+      declarations:
+            - match: \b(Document|Process)\b\s+\b\w+\b\s*{
+              scope: entity.name.docbuf
+            - match: "}"
+              scope: entity.name.docbuf
+      field-declarations:
+            - match: \b\w+\b\s*:\s*\b\w+\b\s*,
+              scope: keyword.declaration.docbuf
+            - match: \b\w+\b\s*:\s*\[\b\w+\b\]\s*,
+              scope: keyword.declaration.docbuf
+            - match: \b\w+\b\s*:\s*\[\b\w+\b\]\s*->\s*\(\)\s*,
+              scope: keyword.declaration.docbuf
+            - match: \b\w+\b\s*:\s*\b\w+\b\s*->\s*\(\)\s*,
+              scope: keyword.declaration.docbuf
+      options:
+            - match: "#\\[\\bimports\\b {"
+              scope: variable.parameter.option.docbuf
+            - match: "#\\[\\b(process|field|endpoint|document)::options\\b {"
+              scope: variable.parameter.option.docbuf
+            - match: "}]"
+              scope: variable.parameter.option.docbuf
+      option-fields:
+            - match: \b\w+\b\s*=\s*\b\w+\b\s*;
+              scope: variable.parameter.option.docbuf
+            - match: \b\w+\b\s*=\s*".*"\s*;
+              scope: variable.parameter.option.docbuf
+      comments:
+            - match: \/\*
+              scope: punctuation.definition.comment.docbuf
+              push:
+                    - meta_scope: comment.block.docbuf
+                    - match: \*\/
+                      scope: punctuation.definition.comment.docbuf
+                      pop: true
+                    - include: comments
+            - match: \/\/
+              scope: punctuation.definition.comment.docbuf
+              push:
+                    - meta_scope: comment.line.docbuf
+                    - match: $
+                      pop: true
+                    - include: comments
