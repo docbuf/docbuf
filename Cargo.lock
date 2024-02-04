@@ -78,6 +78,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "docbuf"
+version = "0.1.0"
+dependencies = [
+ "docbuf-core",
+]
+
+[[package]]
 name = "docbuf-core"
 version = "0.1.0"
 dependencies = [

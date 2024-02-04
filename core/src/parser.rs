@@ -380,6 +380,7 @@ impl Parser {
             }
         }
 
+        // Throw an error if the module name does not exist.
         if !parser.found_module_name {
             return Err(Error::InvalidModule);
         }
