@@ -1,0 +1,6 @@
+[book]
+authors = ["Ryan Tate"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Document Buffers ( DocBuf ) User Guide"
