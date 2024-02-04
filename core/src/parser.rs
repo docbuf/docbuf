@@ -116,7 +116,7 @@ impl Parser {
         Parser {
             found_module_name: false,
             context: ParserContext::new(),
-            pragma: Pragma::v1,
+            pragma: Pragma::V1,
             imports: Vec::new(),
             module_name: String::new(),
             documents: DocumentMap::default(),
@@ -417,7 +417,7 @@ impl Parser {
         println!("Source: {:?}", source);
 
         match source.trim() {
-            "v1" => Ok(Pragma::v1),
+            "v1" => Ok(Pragma::V1),
             _ => Err(Error::MissingPragma),
         }
     }
@@ -470,7 +470,7 @@ mod tests {
     fn test_parser() -> Result<(), Box<dyn std::error::Error>> {
         let file = Path::new("../examples/example.docbuf");
 
-        let parser = Parser::from_file(&file)?;
+        Parser::from_file(&file)?;
 
         Ok(())
     }

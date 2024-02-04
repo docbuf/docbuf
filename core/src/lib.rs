@@ -6,5 +6,5 @@ pub mod parser;
 
 #[derive(Debug, Clone)]
 pub enum Pragma {
-    v1,
+    V1,
 }

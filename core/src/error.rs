@@ -1,4 +1,4 @@
-use nom::error::{ErrorKind, ParseError};
+use nom::error::ErrorKind;
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
