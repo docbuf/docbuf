@@ -132,4 +132,4 @@ process Messenger {
 <!-- Add Copyright Notice -->
 ## Copyright
 
-© 2024 [Ryan Tate](https://ryanmtate.com) - All Rights Reserved
+© 2024 [Emergent Financial, LLC](https://emergent.financial) - All Rights Reserved
