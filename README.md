@@ -14,7 +14,33 @@ DocBuf takes the good parts of `XSD`, for example implementing its own version o
 
 Similar to Protocol Buffers and `gRPC`, DocBuf introduces the `process` keyword to define a process with `endpoints` that specify either remote procedural call (`RPC`)-style or `stream` APIs. The `process:options` section defines in-line support for configuration options.
 
-### Example `.docbuf` Source File
+### Example `Rust` DocBuf Derive Macro
+
+```rust
+
+use docbuf::derive::DocBuf;
+
+#[derive(DocBuf)]
+#[docbuf::options {
+    sign = true;
+}]
+pub struct ExampleDocument {
+    #[docbuf {
+        length = 32;
+    }]
+    data: Vec<u8>
+    metadata: ExampleMetadata,
+}
+
+#[derive(DocBuf)]
+pub struct ExampleMetadata {
+    name: String,
+    description: String,
+}
+
+```
+
+### Example DocBuf IDL Schema (.docbuf)
 
 ```docbuf
 pragma docbuf v1;

@@ -13,9 +13,16 @@ pub fn derive_docbuf(input: TokenStream) -> TokenStream {
 
     // derive::derive_docbuf(attr.clone(), input.clone()).into()
 
-    println!("input: {:#?}", input);
+    // println!("\n\nderive_docbuf - input: {:#?}\n\n", input);
 
-    TokenStream::new()
+    // TokenStream::new()
+
+    // Implementation logic for the DocBuf derive macro
+    let impl_docbuf = derive::docbuf_impl(attr.clone(), input.clone());
+
+    quote! {
+        #impl_docbuf
+    }.into()
 }
 
 

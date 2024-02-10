@@ -1,18 +1,19 @@
-use crate::{error, Result};
+use crate::{error, Result, traits::DocBuf};
+use crate::vtable::VTable;
 
 use serde::{Serializer, Serialize};
 
-
-
 pub struct DocBufSerializer {
+    pub vtable: VTable,
     pub output: Vec<u8>,
 }
 
 pub fn to_docbuf<T>(value: &T) -> Result<Vec<u8>>
 where
-    T: Serialize,
+    T: Serialize + DocBuf,
 {
     let mut serializer = DocBufSerializer {
+        vtable: T::vtable()?,
         output: Vec::new(),
     };
 

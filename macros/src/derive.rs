@@ -123,15 +123,12 @@ pub(crate) fn docbuf_item(item: TokenStream) -> TokenStream {
 
 pub(crate) fn docbuf_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
-
-    // println!("Attr: {:#?}", attr);
-
-    let mut options = DocBufOpts::from(attr.clone());
-
-    println!("Options: {:#?}", options);
+    // // println!("Attr: {:#?}", attr);
+    // let mut options = DocBufOpts::from(attr.clone());
+    // println!("Options: {:#?}", options);
+    // let crypto_methods = docbuf_impl_crypto(&name, &mut options);
 
     let serialization_methods = docbuf_impl_serialization(item.clone());
-    let crypto_methods = docbuf_impl_crypto(&name, &mut options);
     let vtable = docbuf_impl_vtable(item.clone());
     
     let output = quote! {
@@ -157,10 +154,6 @@ pub(crate) fn docbuf_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
             // VTable
             #vtable
         }
-
-        // Add crypto methods if the sign option is present
-        #crypto_methods
-        
     };
 
     TokenStream::from(output)
@@ -281,24 +274,33 @@ pub(crate) fn docbuf_required_macros() -> TokenStream {
 }
 
 pub(crate) fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let name = parse_item_name(&item);
+
+    // println!("Attr: {:#?}", attr);
+
+    let mut options = DocBufOpts::from(attr.clone());
+    println!("Options: {:#?}", options);
+    
     // println!("\n\nitem: {:#?}", item);
     // Required derive macros
     let derive_macros = docbuf_required_macros();
 
-    let attr_docbuf = docbuf_attr(attr.clone(), item.clone());
+    // let attr_docbuf = docbuf_attr(attr.clone(), item.clone());
     // parse the inner field attributes of the item
     let item_docbuf = docbuf_item(item.clone());
-    // Implementation logic for the DocBuf derive macro
-    let impl_docbuf = docbuf_impl(attr.clone(), item.clone());
+    
+    // Add crypto methods from the options
+    let crypto_methods = docbuf_impl_crypto(&name, &mut options);
 
-    let ast: ItemStruct = syn::parse2(item.clone()).unwrap();
+
+    // let ast: ItemStruct = syn::parse2(item.clone()).unwrap();
 
     let output = quote! {
         // #attr_docbuf
         // #derive_macros
         #item_docbuf
 
-        #impl_docbuf
+        #crypto_methods
     };
 
     println!("Output: {:?}", output.to_string());

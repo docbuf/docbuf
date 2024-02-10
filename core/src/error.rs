@@ -25,10 +25,6 @@ pub enum Error {
     /// Invalid Module
     #[error("Invalid module. There must be one module name declared per file.")]
     InvalidModule,
-    /// Serialization Error
-    /// This is a custom error type for the docbuf serialization crate
-    #[error(transparent)]
-    Serde(#[from] docbuf_serde::error::Error),
     #[cfg(feature = "crypto")]
     /// Hash Digest Error
     /// #[cfg(feature = "crypto")]
@@ -44,11 +40,26 @@ pub enum Error {
     /// Invalid Field Type
     #[error("Invalid field type: {0}")]
     InvalidFieldType(String),
+    /// Custom Error Type
+    #[error("Error: {0}")]
+    Custom(String),
 }
 
 // Convert the &str error from nom to the owned Error type
 impl From<nom::Err<(&str, ErrorKind)>> for Error {
     fn from(value: nom::Err<(&str, ErrorKind)>) -> Self {
         Error::Nom(value.to_owned())
+    }
+}
+
+impl serde::ser::Error for Error {
+    fn custom<T: std::fmt::Display>(msg: T) -> Self {
+        Error::Custom(msg.to_string())
+    }
+}
+
+impl serde::de::Error for Error {
+    fn custom<T: std::fmt::Display>(msg: T) -> Self {
+        Error::Custom(msg.to_string())
     }
 }

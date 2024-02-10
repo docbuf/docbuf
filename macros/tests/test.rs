@@ -39,21 +39,21 @@ pub struct Document {
     sign = "true";
 }]
 pub struct Metadata {
-    #[docbuf {
-        min_length = 0;
-    }]
+    // #[docbuf {
+    //     min_length = 0;
+    // }]
     pub metadata: String,
     pub signature: Signature
 }
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize)]
-#[docbuf {
-    sign = "true";
-}]
+// #[docbuf {
+//     sign = "true";
+// }]
 pub struct Signature {
-    #[docbuf {
-        length = 32;
-    }]
+    // #[docbuf {
+    //     length = 32;
+    // }]
     pub signature: String,
 }
 
@@ -80,11 +80,11 @@ fn test_docbuf_macros() -> Result<(), docbuf_core::error::Error> {
 
     println!("vtable: {:#?}", vtable);
 
-    // let mut hasher = sha2::Sha256::default();
+    let mut hasher = sha2::Sha256::default();
 
-    // let hash = document.hash(&mut hasher)?;
+    let hash = document.hash(&mut hasher)?;
 
-    // println!("hash: {:?}", hash);
+    println!("hash: {:?}", hash);
 
     Ok(())
 }
