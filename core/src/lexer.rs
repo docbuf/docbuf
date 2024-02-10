@@ -3,9 +3,6 @@ use std::ops::Range;
 
 pub use logos::{Lexer, Logos};
 
-// Keep track of the latest token ranges.
-pub type TokenRanges = HashMap<Token, Range<usize>>;
-
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     // Search for the pragma version

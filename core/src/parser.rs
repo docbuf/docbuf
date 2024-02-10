@@ -17,34 +17,36 @@ pub enum OptionSet {
 
 #[derive(Debug, Clone)]
 pub struct ParserContext {
-    pub current_span: std::ops::Range<usize>,
-    pub current_token: Option<Token>,
+    pub previous_span: std::ops::Range<usize>,
+    pub previous_token: Option<Token>,
     pub current_document: Option<Document>,
     pub current_option_item: Option<String>,
     pub current_comments: Option<String>,
     pub current_option_set: OptionSet,
     pub current_field_name: Option<String>,
+    pub current_enumerable: Option<Enumerable>,
 }
 
 impl ParserContext {
     pub fn new() -> ParserContext {
         ParserContext {
-            current_span: 0..0,
-            current_token: None,
+            previous_span: 0..0,
+            previous_token: None,
             current_document: None,
             current_option_item: None,
             current_comments: None,
             current_option_set: OptionSet::None,
             current_field_name: None,
+            current_enumerable: None,
         }
     }
 
-    pub fn set_current_token(&mut self, token: Token) {
-        self.current_token = Some(token);
+    pub fn set_previous_token(&mut self, token: Token) {
+        self.previous_token = Some(token);
     }
 
-    pub fn set_current_span(&mut self, span: std::ops::Range<usize>) {
-        self.current_span = span;
+    pub fn set_previous_span(&mut self, span: std::ops::Range<usize>) {
+        self.previous_span = span;
     }
 
     pub fn set_current_document(&mut self, document: Document) {
@@ -129,12 +131,12 @@ impl Parser {
 
         let mut tokens = Token::lexer(source);
 
-        parser.context.current_token = tokens
+        parser.context.previous_token = tokens
             .next()
             .transpose()
             .map_err(|_| Error::Token(String::from("No Token Found.")))?;
 
-        parser.context.current_span = tokens.span();
+        parser.context.previous_span = tokens.span();
 
         while let Some(token) = tokens.next() {
             if let Ok(token) = token {
@@ -163,18 +165,21 @@ impl Parser {
                         println!("Import: {:?}", tokens.slice());
                     }
                     Token::StatementEnd => {
-                        match parser.context.current_token {
+                        match parser.context.previous_token {
                             Some(Token::Pragma) => {
-                                let span = parser.context.current_span.end + 1..tokens.span().start;
+                                let span =
+                                    parser.context.previous_span.end + 1..tokens.span().start;
                                 parser.pragma = Self::pragma(&source[span])?;
                             }
                             Some(Token::Module) => {
                                 println!("Module: {:?}", tokens.slice());
-                                let span = parser.context.current_span.end + 1..tokens.span().start;
+                                let span =
+                                    parser.context.previous_span.end + 1..tokens.span().start;
                                 parser.module_name = source[span].trim().to_string();
                             }
                             Some(Token::Import) => {
-                                let span = parser.context.current_span.end + 1..tokens.span().start;
+                                let span =
+                                    parser.context.previous_span.end + 1..tokens.span().start;
                                 let import = source[span].trim().to_string();
                                 println!("Import: {:?}", import);
                                 // let import = Self::search_imports(source, Path::new("."))?;
@@ -182,13 +187,12 @@ impl Parser {
                             }
                             Some(Token::StatementAssign) => {
                                 if let Some(option_item) = &parser.context.current_option_item {
-                                    let span = parser.context.current_span.end..tokens.span().start;
+                                    let span =
+                                        parser.context.previous_span.end..tokens.span().start;
                                     let option_value = source[span].trim().to_string();
-
-                                    println!("Option Item: {:?}", option_item);
-
                                     let value = option_value.trim().replace('\"', "");
 
+                                    println!("Option Item: {:?}", option_item);
                                     println!("Option Value: {:?}", value);
 
                                     match &mut parser.context.current_option_set {
@@ -233,6 +237,12 @@ impl Parser {
                                             }
                                             _ => {}
                                         },
+                                        OptionSet::Enum(options) => match option_item.as_str() {
+                                            "name" => {
+                                                options.name = Some(value);
+                                            }
+                                            _ => {}
+                                        },
                                         _ => {}
                                     }
                                 }
@@ -252,9 +262,9 @@ impl Parser {
                         ));
                     }
                     Token::CommentLine => {}
-                    Token::NewLine => match parser.context.current_token {
+                    Token::NewLine => match parser.context.previous_token {
                         Some(Token::CommentLine) => {
-                            let span = parser.context.current_span.end + 1..tokens.span().start;
+                            let span = parser.context.previous_span.end + 1..tokens.span().start;
                             let comment = source[span].trim().to_string();
 
                             parser.context.set_current_comments(comment);
@@ -262,12 +272,12 @@ impl Parser {
                         _ => {}
                     },
                     // Token::Name => {
-                    //     let span = current_span.end + 1..tokens.span().start;
+                    //     let span = previous_span.end + 1..tokens.span().start;
                     //     let name = source[span].trim().to_string();
 
                     //     println!("Name: {:?}", name);
 
-                    //     match current_token {
+                    //     match previous_token {
                     //         Some(Token::Document) => {
                     //             if let Some(document) = &mut current_document {
                     //                 document.name = name;
@@ -279,7 +289,7 @@ impl Parser {
                     //     }
                     // }
                     Token::StatementAssign => {
-                        let span = parser.context.current_span.end + 1..tokens.span().start;
+                        let span = parser.context.previous_span.end + 1..tokens.span().start;
                         let option_item = source[span].trim().to_string();
 
                         // Set the current option to be used by the next statement
@@ -297,7 +307,7 @@ impl Parser {
                         // println!("Current Document: {:?}", current_document);
 
                         // if let Some(document) = &mut current_document {
-                        //     let span = current_span.start..tokens.span().end;
+                        //     let span = previous_span.start..tokens.span().end;
                         //     let options = Parser::document_options(&source[span])?;
                         //     document.options = options;
                         // }
@@ -305,15 +315,33 @@ impl Parser {
                     Token::Document => {
                         println!("Current Document: {:?}", parser.context.current_document);
                     }
-                    Token::SectionStart => {
-                        let span = parser.context.current_span.end + 1..tokens.span().start - 1;
+                    Token::Enumerate => {
+                        let options = match parser.context.current_option_set.clone() {
+                            OptionSet::Enum(options) => options,
+                            _ => EnumOptions::default(),
+                        };
 
-                        match parser.context.current_token {
+                        parser.context.current_enumerable = Some(Enumerable {
+                            options,
+                            ..Default::default()
+                        });
+                    }
+                    Token::SectionStart => {
+                        let span = parser.context.previous_span.end + 1..tokens.span().start - 1;
+
+                        match parser.context.previous_token {
                             Some(Token::Document | Token::OptionsEnd) => {
                                 let document_name = source[span].trim().to_string();
                                 println!("Document Name: {:?}", document_name);
                                 if let Some(document) = &mut parser.context.current_document {
                                     document.name = document_name;
+                                }
+                            }
+                            Some(Token::Enumerate) => {
+                                let enumerate_name = source[span].trim().to_string();
+                                println!("Enumerate Name: {:?}", enumerate_name);
+                                if let Some(enumerable) = &mut parser.context.current_enumerable {
+                                    enumerable.name = enumerate_name;
                                 }
                             }
                             _ => {}
@@ -335,9 +363,9 @@ impl Parser {
                             .context
                             .set_current_option_set(OptionSet::Field(FieldOptions::default()));
                     }
-                    Token::FieldDelimiter => match parser.context.current_token {
+                    Token::FieldDelimiter => match parser.context.previous_token {
                         Some(Token::OptionsEnd | Token::FieldEnd | Token::NewLine) => {
-                            let span = parser.context.current_span.end + 1..tokens.span().start;
+                            let span = parser.context.previous_span.end + 1..tokens.span().start;
                             let field_name = source[span].trim().to_string();
                             parser.context.set_current_field_name(field_name);
                         }
@@ -345,7 +373,7 @@ impl Parser {
                     },
                     Token::FieldEnd => {
                         if let Some(field_name) = &parser.context.current_field_name {
-                            let span = parser.context.current_span.end + 1..tokens.span().start;
+                            let span = parser.context.previous_span.end + 1..tokens.span().start;
                             let field_value = source[span].trim().to_string();
 
                             println!("Field Name: {:?}", field_name);
@@ -361,6 +389,8 @@ impl Parser {
 
                                 println!("Current Document: {:?}", document);
                             }
+                        } else {
+                            unimplemented!("Field End")
                         }
 
                         parser.context.reset_current_field_name();
@@ -375,8 +405,8 @@ impl Parser {
                 }
 
                 // Update the current token and span
-                parser.context.current_token = Some(token);
-                parser.context.current_span = tokens.span();
+                parser.context.previous_token = Some(token);
+                parser.context.previous_span = tokens.span();
             }
         }
 
@@ -473,5 +503,17 @@ mod tests {
         Parser::from_file(&file)?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_token_stream() {
+        use proc_macro2::TokenStream;
+
+        let file =
+            std::fs::read_to_string("../examples/example.docbuf").expect("Failed to read file");
+
+        let tokens: TokenStream = file.parse().unwrap();
+
+        println!("tokens: {:?}", tokens);
     }
 }

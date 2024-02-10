@@ -1,5 +1,9 @@
+#[cfg(feature = "crypto")]
+use crate::crypto::digest;
+
 use nom::error::ErrorKind;
 use thiserror::Error as ThisError;
+
 
 #[derive(ThisError, Debug)]
 pub enum Error {
@@ -21,6 +25,25 @@ pub enum Error {
     /// Invalid Module
     #[error("Invalid module. There must be one module name declared per file.")]
     InvalidModule,
+    /// Serialization Error
+    /// This is a custom error type for the docbuf serialization crate
+    #[error(transparent)]
+    Serde(#[from] docbuf_serde::error::Error),
+    #[cfg(feature = "crypto")]
+    /// Hash Digest Error
+    /// #[cfg(feature = "crypto")]
+    #[error(transparent)]
+    #[cfg(feature = "crypto")]
+    InvalidBufferSize(#[from] digest::InvalidBufferSize),
+    #[cfg(feature = "ed25519")]
+    /// Ed25519 Signature Error
+    #[cfg(feature = "ed25519")]
+    #[error(transparent)]
+    #[cfg(feature = "ed25519")]
+    Ed25519Signature(#[from] ed25519::signature::Error),
+    /// Invalid Field Type
+    #[error("Invalid field type: {0}")]
+    InvalidFieldType(String),
 }
 
 // Convert the &str error from nom to the owned Error type
