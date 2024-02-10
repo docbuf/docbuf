@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{
+use crate::idl::{
     document::*,
     error::Error,
     lexer::{Logos, Token},

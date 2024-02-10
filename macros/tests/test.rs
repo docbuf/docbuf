@@ -74,11 +74,11 @@ fn test_docbuf_macros() -> Result<(), docbuf_core::error::Error> {
         },
     };
 
-    println!("document: {:?}", document);
+    // println!("document: {:?}", document);
 
     let vtable = Document::vtable()?;
 
-    println!("vtable: {:#?}", vtable);
+    // println!("vtable: {:#?}", vtable);
 
     let mut hasher = sha2::Sha256::default();
 

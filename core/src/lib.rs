@@ -1,11 +1,8 @@
-pub mod compiler;
-pub mod document;
-pub mod error;
-pub mod lexer;
-pub mod parser;
+pub mod idl;
 pub mod traits;
 pub mod vtable;
 pub mod serde;
+pub mod error;
 
 #[cfg(feature = "crypto")]
 pub mod crypto {
@@ -18,7 +15,4 @@ pub mod crypto {
 // Result type for the docbuf serialization crate
 pub type Result<T> = std::result::Result<T, error::Error>;
 
-#[derive(Debug, Clone)]
-pub enum Pragma {
-    V1,
-}
+

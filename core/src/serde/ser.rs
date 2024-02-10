@@ -1,4 +1,4 @@
-use crate::{error, Result, traits::DocBuf};
+use crate::{error::Error, Result, traits::DocBuf};
 use crate::vtable::VTable;
 
 use serde::{Serializer, Serialize};
@@ -6,6 +6,7 @@ use serde::{Serializer, Serialize};
 pub struct DocBufSerializer {
     pub vtable: VTable,
     pub output: Vec<u8>,
+    pub current_index: u8,
 }
 
 pub fn to_docbuf<T>(value: &T) -> Result<Vec<u8>>
@@ -15,6 +16,7 @@ where
     let mut serializer = DocBufSerializer {
         vtable: T::vtable()?,
         output: Vec::new(),
+        current_index: 0,
     };
 
     value.serialize(&mut serializer)?;
@@ -25,7 +27,7 @@ where
 impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     type Ok = ();
 
-    type Error = error::Error;
+    type Error = Error;
 
     type SerializeSeq = Self;
     type SerializeTuple = Self;
@@ -41,8 +43,21 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
 
         println!("name: {:?}", name);
         println!("len: {:?}", len);
-        
-        unimplemented!("serialize_struct")
+
+        // Check the vtable for the entry
+        if let Some(entry) = self.vtable.structs.get(name.as_bytes()) {
+            println!("Entry: {:#?}", entry);
+
+            // Check if entry fields match the length of the fields from the serializer
+            if entry.num_fields != len as u8 {
+                
+                return Err(Error::Custom(format!("Number of fields in struct {} does not match the vtable", name)));
+            }
+        }
+
+
+
+        Ok(self)
     }
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok> {
@@ -179,7 +194,7 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
 
 impl<'a> serde::ser::SerializeSeq for &'a mut DocBufSerializer {
     type Ok = ();
-    type Error = error::Error;
+    type Error = Error;
 
     fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
@@ -195,7 +210,7 @@ impl<'a> serde::ser::SerializeSeq for &'a mut DocBufSerializer {
 
 impl<'a> serde::ser::SerializeTuple for &'a mut DocBufSerializer {
     type Ok = ();
-    type Error = error::Error;
+    type Error = Error;
 
     fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
@@ -211,7 +226,7 @@ impl<'a> serde::ser::SerializeTuple for &'a mut DocBufSerializer {
 
 impl<'a> serde::ser::SerializeTupleStruct for &'a mut DocBufSerializer {
     type Ok = ();
-    type Error = error::Error;
+    type Error = Error;
 
     fn serialize_field<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
@@ -227,7 +242,7 @@ impl<'a> serde::ser::SerializeTupleStruct for &'a mut DocBufSerializer {
 
 impl<'a> serde::ser::SerializeTupleVariant for &'a mut DocBufSerializer {
     type Ok = ();
-    type Error = error::Error;
+    type Error = Error;
 
     fn serialize_field<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
@@ -243,7 +258,7 @@ impl<'a> serde::ser::SerializeTupleVariant for &'a mut DocBufSerializer {
 
 impl<'a> serde::ser::SerializeMap for &'a mut DocBufSerializer {
     type Ok = ();
-    type Error = error::Error;
+    type Error = Error;
 
     fn serialize_key<T: ?Sized>(&mut self, key: &T) -> Result<()>
     where
@@ -266,7 +281,7 @@ impl<'a> serde::ser::SerializeMap for &'a mut DocBufSerializer {
 
 impl<'a> serde::ser::SerializeStruct for &'a mut DocBufSerializer {
     type Ok = ();
-    type Error = error::Error;
+    type Error = Error;
 
     fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
@@ -282,7 +297,7 @@ impl<'a> serde::ser::SerializeStruct for &'a mut DocBufSerializer {
 
 impl<'a> serde::ser::SerializeStructVariant for &'a mut DocBufSerializer {
     type Ok = ();
-    type Error = error::Error;
+    type Error = Error;
 
     fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> Result<()>
     where

@@ -1,4 +1,6 @@
-use crate::{error, vtable::VTable};
+use crate::error;
+
+use crate::{vtable::VTable};
 
 #[cfg(feature = "crypto")]
 use crate::crypto::{ed25519, digest::{self, Digest, HashMarker, FixedOutputReset, FixedOutput}};

@@ -1,6 +1,5 @@
 mod derive;
 
-use docbuf_core::lexer::Token;
 use proc_macro::TokenStream;
 use quote::quote;
 
