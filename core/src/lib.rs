@@ -3,6 +3,8 @@ pub mod traits;
 pub mod vtable;
 pub mod serde;
 pub mod error;
+#[cfg(feature = "macros")]
+pub mod macros;
 
 #[cfg(feature = "crypto")]
 pub mod crypto {
@@ -12,7 +14,7 @@ pub mod crypto {
     pub use sha2;
 }
 
-// Result type for the docbuf serialization crate
+// Result type for the docbuf core crate
 pub type Result<T> = std::result::Result<T, error::Error>;
 
 

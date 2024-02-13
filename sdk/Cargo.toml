@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 homepage = "https://docbuf.com"
-description = "DocBuf Command Line Interface (CLI) Tool"
+description = "DocBuf Software Development Kit (SDK)"
 readme = "../README.md"
 repository = "https://github.com/docbuf/docbuf"
 
 [dependencies]
 docbuf-core = { version = "0.1.0", path = "../core" }
+docbuf-macros = { version = "0.1.0", path = "../macros" }

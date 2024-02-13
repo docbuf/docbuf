@@ -1,6 +1,7 @@
-pub use super::structs::*;
+pub use super::*;
 
 pub type FieldIndex = u8;
+pub type FieldNameAsBytes = Vec<u8>;
 
 #[derive(Debug, Clone)]
 pub struct VTableField {
@@ -9,7 +10,7 @@ pub struct VTableField {
     // The type of the field
     pub field_type: FieldType,
     pub field_index: FieldIndex,
-    pub field_name_as_bytes: Vec<u8>,
+    pub field_name_as_bytes: FieldNameAsBytes,
 }
 
 impl VTableField {
@@ -35,17 +36,16 @@ impl VTableField {
 
         // field index
         bytes.push(self.field_index);
-        
+
         // field type
         bytes.push(self.field_type.clone().into());
-        
+
         // field name length
         bytes.push(self.field_name_as_bytes.len() as u8);
         bytes.extend_from_slice(self.field_name_as_bytes.as_slice());
         bytes
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub enum FieldType {
@@ -75,7 +75,7 @@ impl FieldType {
             Ok(FieldType::Struct(s)) => {
                 println!("Field Type is a struct: {:?}", s);
                 true
-            },
+            }
             _ => false,
         }
     }
@@ -125,7 +125,7 @@ impl From<u8> for FieldType {
             13 => FieldType::Bytes,
             14 => FieldType::Bool,
             15 => FieldType::Struct(StructNameAsBytes::new()),
-            _ => todo!("Handle unknown field type")
+            _ => todo!("Handle unknown field type"),
         }
     }
 }
@@ -152,4 +152,3 @@ impl Into<u8> for FieldType {
         }
     }
 }
-

@@ -7,25 +7,25 @@ use syn::{parse::Parser, DeriveInput, ItemStruct};
 
 // TODO: Replace with OID
 #[derive(Debug, Clone)]
-pub(crate) enum DocBufCryptoAlgorithm {
+pub enum DocBufCryptoAlgorithm {
     Ed25519,
 }
 
 // TODO: Replace with external library
 #[derive(Debug, Clone)]
-pub(crate) enum HashAlgorithm {
+pub enum HashAlgorithm {
     Sha256,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum DocBufOpt {
+pub enum DocBufOpt {
     Sign(bool),
     Crypto(DocBufCryptoAlgorithm),
     Hash(HashAlgorithm),
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DocBufOpts(HashMap<String, DocBufOpt>);
+pub struct DocBufOpts(HashMap<String, DocBufOpt>);
 
 impl From<TokenStream> for DocBufOpts {
     fn from(input: TokenStream) -> Self {
@@ -93,7 +93,7 @@ impl From<TokenStream> for DocBufOpts {
 }
 
 // Parse the attributes of the derive macro
-pub(crate) fn docbuf_attr(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn docbuf_attr(attr: TokenStream, item: TokenStream) -> TokenStream {
     
     // println!("item: {:#?}", item);
 
@@ -106,7 +106,7 @@ pub(crate) fn docbuf_attr(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::new()
 }
 
-pub(crate) fn docbuf_item(item: TokenStream) -> TokenStream {
+pub fn docbuf_item(item: TokenStream) -> TokenStream {
     // println!("\n\nitem: {:#?}", item);
 
     let name = parse_item_name(&item);
@@ -121,7 +121,7 @@ pub(crate) fn docbuf_item(item: TokenStream) -> TokenStream {
     TokenStream::from(output)
 }
 
-pub(crate) fn docbuf_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn docbuf_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
     // // println!("Attr: {:#?}", attr);
     // let mut options = DocBufOpts::from(attr.clone());
@@ -160,7 +160,7 @@ pub(crate) fn docbuf_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 // Impl docbuf signing for the input struct
-pub(crate) fn docbuf_impl_crypto(name: &TokenStream, options: &mut DocBufOpts) -> TokenStream {
+pub fn docbuf_impl_crypto(name: &TokenStream, options: &mut DocBufOpts) -> TokenStream {
     let mut output = Vec::new();
     
     // Check if the sign option is present
@@ -177,7 +177,7 @@ pub(crate) fn docbuf_impl_crypto(name: &TokenStream, options: &mut DocBufOpts) -
     })
 }
 
-pub(crate) fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
+pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
 
     let ast: ItemStruct = syn::parse(item.to_owned().into()).unwrap();
@@ -191,7 +191,7 @@ pub(crate) fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 
         println!("Field type: {:#?}", ty);
 
-        match ::docbuf_core::vtable::FieldType::is_struct(ty.to_string().as_ref()) {
+        match crate::vtable::FieldType::is_struct(ty.to_string().as_ref()) {
             true => {
                 let table_name = format!("{}_vtable", ty.to_string()).to_lowercase();
                 let table_name_var = Ident::new(&table_name, Span::call_site());
@@ -243,7 +243,7 @@ pub(crate) fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 }
 
 // Impl docbuf serialization and deserialization for the input struct
-pub(crate) fn docbuf_impl_serialization(input: TokenStream) -> TokenStream {
+pub fn docbuf_impl_serialization(input: TokenStream) -> TokenStream {
     let output = quote! {
         // Serialize the struct to a byte buffer
         fn to_docbuf(&self) -> Result<Vec<u8>, ::docbuf_core::error::Error> {
@@ -252,14 +252,14 @@ pub(crate) fn docbuf_impl_serialization(input: TokenStream) -> TokenStream {
     
         // Deserialize the byte buffer to a struct
         fn from_docbuf(buf: &[u8]) -> Result<Self, ::docbuf_core::error::Error> {
-            unimplemented!("from_docbuf")
+            Ok(::docbuf_core::serde::de::from_docbuf(buf)?)
         }
     };
 
     TokenStream::from(output)
 }
 
-pub(crate) fn docbuf_required_macros() -> TokenStream {
+pub fn docbuf_required_macros() -> TokenStream {
     let macros = vec![
         "std::fmt::Debug", "Clone", "::serde::Serialize", "::serde::Deserialize"
     ].join(", ");
@@ -273,7 +273,7 @@ pub(crate) fn docbuf_required_macros() -> TokenStream {
     output
 }
 
-pub(crate) fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
 
     // println!("Attr: {:#?}", attr);
@@ -309,13 +309,13 @@ pub(crate) fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream
 }
 
 // Parse the item name from the input token stream
-pub(crate) fn parse_item_name(input: &TokenStream) -> TokenStream {
+pub fn parse_item_name(input: &TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input.to_owned().into()).unwrap();
     ast.ident.to_token_stream()
 }
 
 // Parse the item fields from the input stream
-pub(crate) fn parse_item_fields(input: &TokenStream) -> TokenStream {
+pub fn parse_item_fields(input: &TokenStream) -> TokenStream {
     let ast: ItemStruct = syn::parse(input.to_owned().into()).unwrap();
     let fields = ast.fields.iter().map(|field| {
         let name = field.ident.as_ref().unwrap();

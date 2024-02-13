@@ -12,10 +12,17 @@ pub const STRUCT_SEPARATOR: u8 = 0xFF;
 /// The separator value type of `0xFE` is used to separate the fields in the VTable
 pub const FIELD_SEPARATOR: u8 = 0xFE;
 
+/// Length separator value type of `0xFD` is used to separate the length of the field
+pub const LENGTH_SEPARATOR: u8 = 0xFD;
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Field length mismatch")]
     FieldLengthMismatch,
+    #[error("Struct Not Found")]
+    StructNotFound,
+    #[error("Field Not Found")]
+    FieldNotFound,
 }
 
 #[cfg(test)]

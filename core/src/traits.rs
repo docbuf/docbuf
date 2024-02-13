@@ -42,9 +42,9 @@ pub trait DocBufCrypto: DocBuf {
         signer: impl ed25519::signature::Signer<ed25519::Signature>,
     ) -> Result<ed25519::Signature, error::Error>
         where D: 
-            Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker
+            Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker + 'static
     {
-        let data = self.hash(&mut digest.clone())?;
+        let data = self.hash(digest)?;
         let signature = signer.try_sign(&data)?;
         Ok(signature)
     }
@@ -57,10 +57,10 @@ pub trait DocBufCrypto: DocBuf {
         verifier: impl ed25519::signature::Verifier<ed25519::Signature>
     ) -> Result<(), error::Error> 
      where D: 
-        Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker
+        Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker + 'static
     {
         // Re-compute the data hash message that was signed.
-        let data = self.hash(&mut digest.clone())?;
+        let data = self.hash(digest)?;
 
         // Verify the signature against the hashed payload.
         verifier.verify(&data, signature)?;
@@ -70,13 +70,14 @@ pub trait DocBufCrypto: DocBuf {
 
     #[cfg(feature = "digest")]
     fn hash<D>(&self, digest: &mut D) -> Result<Vec<u8>, error::Error>
-        where D: Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker
+        where D: Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker + 'static
     {
         // Hash the document buffer contents
+        use digest::DynDigest;
         let bytes = self.to_docbuf()?;
 
-        // Create a buffer for the hash result
-        let mut result = Vec::new();
+        let output_size = digest.output_size();
+        let mut result = vec![0u8; output_size];
 
         Digest::update(digest, &bytes);
 

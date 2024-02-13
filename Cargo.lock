@@ -142,6 +142,7 @@ name = "docbuf"
 version = "0.1.0"
 dependencies = [
  "docbuf-core",
+ "docbuf-macros",
 ]
 
 [[package]]
@@ -153,9 +154,11 @@ dependencies = [
  "logos",
  "nom",
  "proc-macro2",
+ "quote",
  "regex",
  "serde",
  "sha2",
+ "syn",
  "thiserror",
 ]
 
@@ -163,11 +166,10 @@ dependencies = [
 name = "docbuf-macros"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "docbuf-core",
- "proc-macro2",
- "quote",
  "serde",
- "syn",
+ "serde_json",
 ]
 
 [[package]]

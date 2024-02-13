@@ -1,22 +1,30 @@
-use crate::{error::Error, Result, traits::DocBuf};
-use crate::vtable::VTable;
+use serde::Serialize;
 
-use serde::{Serializer, Serialize};
+use crate::vtable::*;
+use crate::{error::Error, traits::DocBuf, Result};
+
+// Number of bytes in a gigabyte as a usize
+pub const GIGABYTES: usize = 1024 * 1024 * 1024;
+
+// Maximum size of a field in a struct
+pub const MAX_FIELD_SIZE: usize = GIGABYTES;
 
 pub struct DocBufSerializer {
     pub vtable: VTable,
     pub output: Vec<u8>,
-    pub current_index: u8,
+    pub current_struct_index: u8,
+    pub current_field_index: u8,
 }
 
 pub fn to_docbuf<T>(value: &T) -> Result<Vec<u8>>
 where
-    T: Serialize + DocBuf,
+    T: Serialize + DocBuf + std::fmt::Debug,
 {
     let mut serializer = DocBufSerializer {
         vtable: T::vtable()?,
         output: Vec::new(),
-        current_index: 0,
+        current_struct_index: 0,
+        current_field_index: 0,
     };
 
     value.serialize(&mut serializer)?;
@@ -37,25 +45,27 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
-
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self> {
-        println!("serialize_struct");
+        // println!("serialize_struct");
 
-        println!("name: {:?}", name);
-        println!("len: {:?}", len);
+        // println!("name: {:?}", name);
+        // println!("len: {:?}", len);
 
         // Check the vtable for the entry
         if let Some(entry) = self.vtable.structs.get(name.as_bytes()) {
-            println!("Entry: {:#?}", entry);
+            // println!("Entry: {:#?}", entry);
+
+            // Set current index
+            self.current_struct_index = entry.struct_index;
 
             // Check if entry fields match the length of the fields from the serializer
             if entry.num_fields != len as u8 {
-                
-                return Err(Error::Custom(format!("Number of fields in struct {} does not match the vtable", name)));
+                return Err(Error::Serde(format!(
+                    "Number of fields in struct {} does not match the vtable",
+                    name
+                )));
             }
         }
-
-
 
         Ok(self)
     }
@@ -101,7 +111,34 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        unimplemented!("serialize_str")
+        let mut encoded = vec![self.current_struct_index, self.current_field_index];
+
+        let bytes = v.as_bytes().to_vec();
+
+        // println!("Bytes: {:?}", bytes);
+
+        if bytes.len() > MAX_FIELD_SIZE {
+            let msg = format!(
+                "Failed to serialize data. Struct {}, Field {} data size exceeds 1 gigabyte",
+                self.current_struct_index, self.current_field_index
+            );
+            return Err(Error::Serde(msg));
+        }
+
+        let data_length = bytes.len().to_le_bytes();
+
+        // println!("Data length: {:?}", data_length);
+
+        // Return only the first four bytes (0..4) of the data
+        let data_length = data_length[0..4].to_vec();
+
+        encoded.extend_from_slice(data_length.as_slice());
+        // encoded.push(LENGTH_SEPARATOR);
+        encoded.extend_from_slice(&bytes);
+
+        self.output.extend_from_slice(&encoded);
+
+        Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
@@ -143,7 +180,12 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
         unimplemented!("serialize_unit_struct")
     }
 
-    fn serialize_unit_variant(self, name: &'static str, variant_index: u32, variant: &'static str) -> Result<Self::Ok> {
+    fn serialize_unit_variant(
+        self,
+        name: &'static str,
+        variant_index: u32,
+        variant: &'static str,
+    ) -> Result<Self::Ok> {
         unimplemented!("serialize_unit_variant")
     }
 
@@ -154,7 +196,13 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
         unimplemented!("serialize_newtype_struct")
     }
 
-    fn serialize_newtype_variant<T: ?Sized>(self, name: &'static str, variant_index: u32, variant: &'static str, value: &T) -> Result<Self::Ok>
+    fn serialize_newtype_variant<T: ?Sized>(
+        self,
+        name: &'static str,
+        variant_index: u32,
+        variant: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok>
     where
         T: Serialize,
     {
@@ -169,11 +217,21 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
         unimplemented!("serialize_tuple")
     }
 
-    fn serialize_tuple_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeTupleStruct> {
+    fn serialize_tuple_struct(
+        self,
+        name: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
         unimplemented!("serialize_tuple_struct")
     }
 
-    fn serialize_tuple_variant(self, name: &'static str, variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeTupleVariant> {
+    fn serialize_tuple_variant(
+        self,
+        name: &'static str,
+        variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
         unimplemented!("serialize_tuple_variant")
     }
 
@@ -182,14 +240,14 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     }
 
     fn serialize_struct_variant(
-            self,
-            name: &'static str,
-            variant_index: u32,
-            variant: &'static str,
-            len: usize,
-        ) -> Result<Self::SerializeStructVariant> {
+        self,
+        name: &'static str,
+        variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeStructVariant> {
         unimplemented!("serialize_struct_variant")
-    }   
+    }
 }
 
 impl<'a> serde::ser::SerializeSeq for &'a mut DocBufSerializer {
@@ -287,11 +345,22 @@ impl<'a> serde::ser::SerializeStruct for &'a mut DocBufSerializer {
     where
         T: Serialize,
     {
-        unimplemented!("serialize_field")
+        self.current_field_index = self
+            .vtable
+            .struct_by_index(&self.current_struct_index)?
+            .field_index_from_name(key)?;
+
+        // println!("Serializing field: {:?}", key);
+        // println!("Encoding field: {:?}", encoded);
+
+        value.serialize(&mut **self)?;
+
+        Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
-        unimplemented!("end")
+        // Update the current index
+        Ok(())
     }
 }
 

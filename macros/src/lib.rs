@@ -1,7 +1,7 @@
-mod derive;
-
 use proc_macro::TokenStream;
-use quote::quote;
+
+// 
+use docbuf_core::macros::{derive, proc_macro2, quote::quote};
 
 #[proc_macro_derive(DocBuf)]
 pub fn derive_docbuf(input: TokenStream) -> TokenStream {
