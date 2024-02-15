@@ -47,8 +47,11 @@ impl VTableField {
         }
     }
 
-    pub fn encode_field_data(&self, field_data: &[u8]) -> Result<Vec<u8>, Error> {
-        let data_length = self.encode_data_length_to_le_bytes(field_data.len())?;
+    pub fn encode(&self, field_data: &[u8]) -> Result<Vec<u8>, Error> {
+        // Ensure the field data corresponds to the field rules
+        self.validate(field_data)?;
+
+        let data_length = FieldRules::le_bytes_data_length(field_data.len());
 
         let mut encoded = Vec::with_capacity(field_data.len() + data_length.len());
         // Add the length of the data
@@ -57,18 +60,6 @@ impl VTableField {
         encoded.extend_from_slice(&field_data);
 
         Ok(encoded)
-    }
-
-    pub fn encode_data_length_to_le_bytes(
-        &self,
-        field_data_length: usize,
-    ) -> Result<Vec<u8>, Error> {
-        self.field_rules
-            .check_data_length_field_rules(field_data_length)?;
-
-        let le_bytes = FieldRules::le_bytes_data_length(field_data_length);
-
-        Ok(le_bytes)
     }
 
     pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
@@ -135,6 +126,19 @@ impl VTableField {
     pub fn field_name_as_string(&self) -> Result<String, Error> {
         let name = String::from_utf8(self.field_name_as_bytes.clone())?;
         Ok(name)
+    }
+
+    pub fn validate(&self, data: &[u8]) -> Result<(), Error> {
+        match self.field_type {
+            FieldType::String => {
+                self.field_rules.check_data_length_field_rules(data.len())?;
+            }
+            _ => {
+                unimplemented!("validate Field Type: {:#?}", self.field_type);
+            }
+        };
+
+        Ok(())
     }
 }
 

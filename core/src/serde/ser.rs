@@ -179,7 +179,7 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
             .vtable
             .struct_by_index(&self.current_struct_index)?
             .field_by_index(&self.current_field_index)?
-            .encode_field_data(&bytes)?;
+            .encode(&bytes)?;
 
         self.data_map
             .insert(self.current_struct_index, self.current_field_index, encoded);
