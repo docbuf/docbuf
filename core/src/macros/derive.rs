@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 
-use proc_macro2::{Ident, Literal, Span, TokenStream, TokenTree};
+use proc_macro2::{Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
-use syn::{parse::Parser, DeriveInput, ItemStruct};
+use syn::{DeriveInput, ItemStruct};
 
 use crate::error::Error;
 
@@ -32,7 +32,7 @@ pub struct DocBufOpts(HashMap<String, DocBufOpt>);
 
 impl From<TokenStream> for DocBufOpts {
     fn from(input: TokenStream) -> Self {
-        // println!("Parsing DocBufOpts: {:#?}", input);
+
         
         let mut iter = input.into_iter();
         let mut num_attr = iter.clone().count() / 4;
@@ -40,12 +40,12 @@ impl From<TokenStream> for DocBufOpts {
         let value_index = 1;
         let mut opts = HashMap::new();
 
-        println!("Num Attr: {}", num_attr);
+
 
         while num_attr > 0 {
-            // println!("Num Attr: {}", num_attr);
-            // println!("Key Index: {}", key_index);
-            // println!("Value Index: {}", value_index);
+
+
+
 
             let mut span_iter = {
                 let mut span = Vec::new();
@@ -57,15 +57,15 @@ impl From<TokenStream> for DocBufOpts {
                 span.into_iter()
             };
 
-            // println!("Span Iter: {:?}", span_iter);
+
 
             if let Some(key) = span_iter.nth(key_index) {
                 if let Some(value) = span_iter.nth(value_index) {
                     let key = key.to_string().replace("\"", "");
                     let value = value.to_string().replace("\"", "");
 
-                    // println!("Key: {:#?}", key);
-                    // println!("Value: {:#?}", value);
+
+
                     
                     let value = match key.as_str() {
                         "sign" => DocBufOpt::Sign("true" == value.as_str()),
@@ -90,28 +90,19 @@ impl From<TokenStream> for DocBufOpts {
             num_attr -= 1;
         }
 
-        // println!("DocBufOpts: {:#?}", opts);        
+
 
         Self(opts)
     }
 }
 
 // Parse the attributes of the derive macro
-pub fn docbuf_attr(attr: TokenStream, item: TokenStream) -> TokenStream {
-    
-    // println!("item: {:#?}", item);
-
-    println!("Parsing DocBuf Derive macro attributes");
-    // println!("\n\nattr: {:#?}", attr);
-
-
-
-
+pub fn docbuf_attr(_attr: TokenStream, _item: TokenStream) -> TokenStream {
     TokenStream::new()
 }
 
 pub fn docbuf_item(item: TokenStream) -> TokenStream {
-    // println!("\n\nitem: {:#?}", item);
+
 
     let name = parse_item_name(&item);
     let fields = parse_item_fields(&item);
@@ -128,9 +119,9 @@ pub fn docbuf_item(item: TokenStream) -> TokenStream {
 
 pub fn docbuf_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
-    // // println!("Attr: {:#?}", attr);
+
     // let mut options = DocBufOpts::from(attr.clone());
-    // println!("Options: {:#?}", options);
+
     // let crypto_methods = docbuf_impl_crypto(&name, &mut options);
 
     let lifetimes = parse_item_lifetimes(&item);
@@ -172,7 +163,7 @@ pub fn docbuf_impl_crypto(name: &TokenStream, item: &TokenStream, options: &mut 
     
     // Check if the sign option is present
     if let Some(DocBufOpt::Sign(true)) = options.0.get("sign") {
-        // println!("Sign Option Present");
+
 
         let lifetimes = parse_item_lifetimes(item);
 
@@ -193,30 +184,11 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 
     let fields = ast.fields.into_iter().collect::<Vec<_>>();
 
-    // fields.sort_by(|a, b| {
-    //     let a = a.ident.as_ref().map(|i| i.to_string()).unwrap_or_default();
-    //     let b = b.ident.as_ref().map(|i| i.to_string()).unwrap_or_default();
-
-    //     println!("Field A: {:#?}", a);
-    //     println!("Field B: {:#?}", b);
-        
-
-    //     a.cmp(&b)
-    // });
-    
     let fields = fields.iter().map(|field| {
         let name = field.ident.as_ref().unwrap();
         let ty = field.ty.to_token_stream();
-        // let vis = &field.vis;
-
-        
         let rules = parse_field_rules(&field).expect("Failed to parse field rules");
         
-        println!("Field Rules: {:?}", rules.to_string());
-    
-        // println!("Field name: {:#?}", name);
-        // println!("Field type: {:#?}", ty);
-
         match crate::vtable::FieldType::is_struct(ty.to_string().as_ref()) {
             true => {
                 let table_name = format!("{}_vtable", ty.to_string()).to_lowercase();
@@ -242,7 +214,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                     vtable.merge_vtable(#table_name_var);
                 };
 
-                // println!("\n\nScope: {:#?}\n\n", scope.to_string());
+
 
                 scope
             },
@@ -310,13 +282,8 @@ pub fn docbuf_required_macros() -> TokenStream {
 
 pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
-
-    // println!("Attr: {:#?}", attr);
-
     let mut options = DocBufOpts::from(attr.clone());
-    println!("Options: {:#?}", options);
-    
-    // println!("\n\nitem: {:#?}", item);
+
     // Required derive macros
     let derive_macros = docbuf_required_macros();
 
@@ -335,7 +302,7 @@ pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
         #crypto_methods
     };
 
-    println!("Output: {:?}", output.to_string());
+
 
     TokenStream::from(output)
 }
@@ -365,7 +332,7 @@ pub fn parse_item_fields(input: &TokenStream) -> TokenStream {
 }
 
 pub fn parse_item_lifetimes(input: &TokenStream) -> TokenStream {
-    println!("Parsing Lifetimes");
+
     
     let ast: ItemStruct = syn::parse(input.to_owned().into()).unwrap();
 
@@ -376,7 +343,7 @@ pub fn parse_item_lifetimes(input: &TokenStream) -> TokenStream {
         TokenStream::new()
     } else {
         let lifetimes = ast.generics.lifetimes().map(|lifetime| {
-            // println!("Lifetime: {:#?}", lifetime.to_token_stream());
+
     
     
             let lifetime = lifetime.to_token_stream();
@@ -428,7 +395,7 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
         })
         .collect::<Result<Vec<TokenStream>, Error>>()?;
 
-    println!("Fields: {:?}", fields);
+
 
     let rules = quote!(
         let mut field_rules = ::docbuf_core::vtable::FieldRules::new();

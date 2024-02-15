@@ -46,7 +46,6 @@ impl VTable {
         let mut bytes = Vec::new();
         for vtable_struct in self.structs.values() {
             let packed_bytes = vtable_struct.to_bytes();
-            println!("VTable Struct: {:?}", packed_bytes);
             bytes.extend_from_slice(&packed_bytes);
             // Add a separator value type of `0xFF`
             // bytes.push(STRUCT_SEPARATOR);
@@ -85,5 +84,80 @@ impl VTable {
     ) -> Result<&VTableField, Error> {
         let vtable_struct = self.struct_by_index(&struct_index)?;
         vtable_struct.field_by_index(&field_index)
+    }
+
+    pub fn parse_raw_values(&self, input: &[u8]) -> Result<DocBufRawValues, Error> {
+        let mut current_struct_index = 0;
+        let mut current_field_index = 0;
+
+        let mut data = DocBufRawValues::new();
+        let mut input = input.to_vec();
+
+        while !input.is_empty() {
+            match self.get_struct_field_by_index(current_struct_index, current_field_index) {
+                Ok(field) => {
+                    let field_data = field.decode(&mut input)?;
+
+                    if !field_data.is_empty() {
+                        data.insert_value(current_struct_index, current_field_index, field_data);
+                    }
+
+                    current_field_index += 1;
+                }
+                _ => {
+                    current_struct_index += 1;
+                    current_field_index = 0;
+                }
+            }
+        }
+
+        Ok(data)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DocBufRawValues(HashMap<StructIndex, HashMap<FieldIndex, Vec<u8>>>);
+
+impl DocBufRawValues {
+    pub fn new() -> Self {
+        DocBufRawValues(HashMap::new())
+    }
+
+    pub fn insert_value(
+        &mut self,
+        struct_index: StructIndex,
+        field_index: FieldIndex,
+        value: Vec<u8>,
+    ) {
+        self.0
+            .entry(struct_index)
+            .or_insert_with(HashMap::new)
+            .insert(field_index, value);
+    }
+
+    pub fn get(&self, struct_index: StructIndex, field_index: FieldIndex) -> Option<&Vec<u8>> {
+        self.0.get(&struct_index)?.get(&field_index)
+    }
+
+    // Check if the raw values is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    // Remove the value from the raw values
+    pub fn remove(
+        &mut self,
+        struct_index: StructIndex,
+        field_index: FieldIndex,
+    ) -> Option<Vec<u8>> {
+        let structs = self.0.get_mut(&struct_index)?;
+        let value = structs.remove(&field_index);
+
+        // Remove the struct if it's empty
+        if structs.is_empty() {
+            self.0.remove(&struct_index);
+        }
+
+        value
     }
 }

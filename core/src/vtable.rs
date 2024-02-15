@@ -10,6 +10,8 @@ pub use table::*;
 pub enum Error {
     #[error("Field length mismatch")]
     FieldLengthMismatch,
+    #[error("Field Rules Length: {0}")]
+    FieldRulesLength(String),
     #[error("Struct Not Found")]
     StructNotFound,
     #[error("Field Not Found")]

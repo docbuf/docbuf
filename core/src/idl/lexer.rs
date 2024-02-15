@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::ops::Range;
-
 pub use logos::{Lexer, Logos};
 
 #[derive(Logos, Debug, PartialEq, Clone)]

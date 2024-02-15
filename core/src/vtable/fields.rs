@@ -1,5 +1,19 @@
 pub use super::*;
 
+// Number of bytes in a gigabyte as a usize
+pub const GIGABYTES: usize = 1024 * 1024 * 1024;
+
+// Maximum size of a field in a struct
+pub const MAX_FIELD_SIZE: usize = GIGABYTES;
+
+// Default field length encoded as 4 le bytes
+pub const DEFAULT_FIELD_LENGTH_LE_BYTES: usize = 4;
+
+pub const U8_MAX: usize = u8::MAX as usize;
+pub const U16_MAX: usize = u16::MAX as usize;
+pub const U32_MAX: usize = u32::MAX as usize;
+pub const U64_MAX: usize = u64::MAX as usize;
+
 pub type FieldIndex = u8;
 pub type FieldNameAsBytes = Vec<u8>;
 
@@ -22,7 +36,7 @@ impl VTableField {
         field_name: &str,
         field_rules: FieldRules,
     ) -> Self {
-        println!("Field Rules: {:?}", field_rules);
+        // println!("Field Rules: {:?}", field_rules);
 
         Self {
             struct_index,
@@ -31,6 +45,73 @@ impl VTableField {
             field_name_as_bytes: field_name.as_bytes().to_vec(),
             field_rules,
         }
+    }
+
+    pub fn encode_field_data(&self, field_data: &[u8]) -> Result<Vec<u8>, Error> {
+        let data_length = self.encode_data_length_to_le_bytes(field_data.len())?;
+
+        let mut encoded = Vec::with_capacity(field_data.len() + data_length.len());
+        // Add the length of the data
+        encoded.extend_from_slice(data_length.as_slice());
+        // Add the field data
+        encoded.extend_from_slice(&field_data);
+
+        Ok(encoded)
+    }
+
+    pub fn encode_data_length_to_le_bytes(
+        &self,
+        field_data_length: usize,
+    ) -> Result<Vec<u8>, Error> {
+        self.field_rules
+            .check_data_length_field_rules(field_data_length)?;
+
+        let le_bytes = FieldRules::le_bytes_data_length(field_data_length);
+
+        Ok(le_bytes)
+    }
+
+    pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
+        Ok(match &self.field_type {
+            FieldType::String => self.decode_field_data(bytes)?,
+            FieldType::U8 => {
+                let field_data = bytes.drain(0..1);
+
+                field_data.collect()
+            }
+            FieldType::Struct(_) => Vec::new(),
+            _ => {
+                unimplemented!("parse_bytes_input Field Type: {:#?}", self.field_type);
+            }
+        })
+    }
+
+    // Decodes the field data from the bytes input.
+    // Returns the raw field data and removes the field data from the bytes, including its length.
+    pub fn decode_field_data(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
+        let (encoded_length, field_data_length) = self.decode_field_data_length(bytes);
+
+        if encoded_length == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Remove the encoded length from the bytes
+        bytes.drain(0..encoded_length);
+        // Remove the field data from the bytes and return it
+        let field_data = bytes.drain(0..field_data_length);
+
+        Ok(field_data.collect())
+    }
+
+    pub fn decode_field_data_length(&self, bytes: &[u8]) -> (usize, usize) {
+        let mut field_length = [0u8; DEFAULT_FIELD_LENGTH_LE_BYTES];
+        let encoded_length = self.field_rules.encoded_data_length(bytes);
+
+        for byte in 0..encoded_length {
+            field_length[byte] = bytes[byte];
+        }
+
+        (encoded_length, u32::from_le_bytes(field_length) as usize)
     }
 
     /// Pack the VTableField into a byte array
@@ -126,6 +207,63 @@ impl FieldRules {
     // Return if the field should be signed
     pub fn sign(&self) -> bool {
         self.sign
+    }
+
+    pub fn check_data_length_field_rules(&self, length: usize) -> Result<(), Error> {
+        if length > MAX_FIELD_SIZE {
+            let msg = format!("data size exceeds 1 gigabyte");
+            return Err(Error::FieldRulesLength(msg));
+        } else if let Some(length) = self.length {
+            if length != length as usize {
+                let msg = format!("data size does not match required length: {length}");
+                return Err(Error::FieldRulesLength(msg));
+            }
+        } else if let Some(max_length) = self.max_length {
+            if length > max_length as usize {
+                let msg = format!("data size exceeds field max length: {max_length}");
+                return Err(Error::FieldRulesLength(msg));
+            }
+        } else if let Some(min_length) = self.min_length {
+            if length < min_length as usize {
+                let msg = format!("data size is less than min length: {min_length}");
+                return Err(Error::FieldRulesLength(msg));
+            }
+        };
+
+        Ok(())
+    }
+
+    pub fn le_bytes_data_length(length: usize) -> Vec<u8> {
+        if length <= U8_MAX {
+            (length as u8).to_le_bytes().to_vec()
+        } else if U8_MAX < length && length <= U16_MAX {
+            (length as u16).to_le_bytes().to_vec()
+        } else if U16_MAX < length && length <= U32_MAX {
+            (length as u32).to_le_bytes().to_vec()
+        } else if U32_MAX < length && length <= U64_MAX {
+            (length as u64).to_le_bytes().to_vec()
+        } else {
+            (length as u32).to_le_bytes().to_vec()
+        }
+    }
+
+    pub fn encoded_data_length(&self, bytes: &[u8]) -> usize {
+        if let Some(length) = self.length {
+            return FieldRules::le_bytes_data_length(length).len();
+        } else if let Some(max_length) = self.max_length {
+            return FieldRules::le_bytes_data_length(max_length).len();
+        } else {
+            if 0 < bytes.len() && bytes.len() >= DEFAULT_FIELD_LENGTH_LE_BYTES {
+                match [bytes[0], bytes[1], bytes[2], bytes[3]] {
+                    [0, 0, 0, _] => 4,
+                    [0, 0, _, _] => 3,
+                    [0, _, _, _] => 2,
+                    _ => 1,
+                }
+            } else {
+                return 0;
+            }
+        }
     }
 }
 

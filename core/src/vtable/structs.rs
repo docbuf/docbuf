@@ -83,6 +83,15 @@ impl VTableStruct {
         Err(Error::FieldNotFound)
     }
 
+    pub fn field_rules_by_index(&self, index: &FieldIndex) -> Result<&FieldRules, Error> {
+        self.field_by_index(index).map(|field| &field.field_rules)
+    }
+
+    pub fn struct_name_as_string(&self) -> Result<String, Error> {
+        let name = String::from_utf8(self.struct_name_as_bytes.clone())?;
+        Ok(name)
+    }
+
     // Pack the VTableStruct into a byte array
     // [struct_index,struct_name_len,struct_name_bytes,num_fields,]
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -97,7 +106,6 @@ impl VTableStruct {
 
         // Add the fields
         for field in self.fields.values() {
-            println!("VTable Field: {:?}", field.to_bytes());
             bytes.extend_from_slice(&field.to_bytes());
         }
 

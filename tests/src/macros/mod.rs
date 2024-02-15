@@ -49,13 +49,13 @@ pub struct Metadata {
 }
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize)]
-// #[docbuf {
-//     sign = "true";
-// }]
+#[docbuf {
+    sign = "true";
+}]
 pub struct Signature {
-    // #[docbuf {
-    //     length = 32;
-    // }]
+    #[docbuf {
+        length = 32;
+    }]
     pub signature: String,
     pub u8_data: u8,
 }
@@ -69,7 +69,7 @@ fn test_docbuf_macros() -> Result<(), docbuf_core::error::Error> {
         metadata: Metadata {
             metadata: String::from("MyAwesomeDocument Metadata"),
             signature: Signature {
-                signature: String::from("MyAwesomeDocument Signature"),
+                signature: ["12345678"; 4].concat(),
                 u8_data: 0x0A,
             },
         },
