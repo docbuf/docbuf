@@ -27,7 +27,17 @@ impl VTable {
     }
 
     pub fn merge_vtable(&mut self, vtable: VTable) {
-        for vtable_struct in vtable.structs.values() {
+        // Sort the vtable structs by struct name
+        let mut vtable_structs = vtable.structs.values().collect::<Vec<&VTableStruct>>();
+
+        // Sorting is required to ensure the structs are added in a consistent order
+        vtable_structs.sort_by(|a, b| {
+            a.struct_name_as_bytes
+                .cmp(&b.struct_name_as_bytes)
+                .then(a.struct_index.cmp(&b.struct_index))
+        });
+
+        for vtable_struct in vtable_structs {
             self.add_struct(vtable_struct.clone());
         }
     }
@@ -39,7 +49,7 @@ impl VTable {
             println!("VTable Struct: {:?}", packed_bytes);
             bytes.extend_from_slice(&packed_bytes);
             // Add a separator value type of `0xFF`
-            bytes.push(STRUCT_SEPARATOR);
+            // bytes.push(STRUCT_SEPARATOR);
         }
 
         bytes
@@ -65,5 +75,15 @@ impl VTable {
         }
 
         Err(Error::StructNotFound)
+    }
+
+    // Return the field from the vtable by struct index and field index
+    pub fn get_struct_field_by_index(
+        &self,
+        struct_index: StructIndex,
+        field_index: FieldIndex,
+    ) -> Result<&VTableField, Error> {
+        let vtable_struct = self.struct_by_index(&struct_index)?;
+        vtable_struct.field_by_index(&field_index)
     }
 }

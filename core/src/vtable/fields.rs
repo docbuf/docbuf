@@ -11,6 +11,7 @@ pub struct VTableField {
     pub field_type: FieldType,
     pub field_index: FieldIndex,
     pub field_name_as_bytes: FieldNameAsBytes,
+    pub field_rules: FieldRules,
 }
 
 impl VTableField {
@@ -19,12 +20,16 @@ impl VTableField {
         field_type: FieldType,
         field_index: FieldIndex,
         field_name: &str,
+        field_rules: FieldRules,
     ) -> Self {
+        println!("Field Rules: {:?}", field_rules);
+
         Self {
             struct_index,
             field_type,
             field_index,
             field_name_as_bytes: field_name.as_bytes().to_vec(),
+            field_rules,
         }
     }
 
@@ -45,6 +50,83 @@ impl VTableField {
         bytes.extend_from_slice(self.field_name_as_bytes.as_slice());
         bytes
     }
+
+    pub fn field_name_as_string(&self) -> Result<String, Error> {
+        let name = String::from_utf8(self.field_name_as_bytes.clone())?;
+        Ok(name)
+    }
+}
+
+/// Optional rules for a field
+#[derive(Debug, Clone)]
+pub struct FieldRules {
+    pub ignore: bool,
+    pub max_value: Option<usize>,
+    pub min_value: Option<usize>,
+    pub max_length: Option<usize>,
+    pub min_length: Option<usize>,
+    // An absolute length
+    pub length: Option<usize>,
+    pub sign: bool,
+}
+
+impl FieldRules {
+    pub fn new() -> Self {
+        Self {
+            ignore: false,
+            max_value: None,
+            min_value: None,
+            max_length: None,
+            min_length: None,
+            length: None,
+            sign: false,
+        }
+    }
+
+    pub fn set_max_length(mut self, max_length: usize) -> Self {
+        self.max_length = Some(max_length);
+        self
+    }
+
+    pub fn set_min_length(mut self, min_length: usize) -> Self {
+        self.min_length = Some(min_length);
+        self
+    }
+
+    pub fn set_length(mut self, length: usize) -> Self {
+        self.length = Some(length);
+        self
+    }
+
+    pub fn set_ignore(mut self, ignore: bool) -> Self {
+        self.ignore = ignore;
+        self
+    }
+
+    // Return the max length of the string
+    pub fn max_length(&self) -> Option<usize> {
+        self.max_length
+    }
+
+    // Return the min length of the string
+    pub fn min_length(&self) -> Option<usize> {
+        self.min_length
+    }
+
+    // Return the length of the string
+    pub fn length(&self) -> Option<usize> {
+        self.length
+    }
+
+    // Return if the field should be ignored
+    pub fn ignore(&self) -> bool {
+        self.ignore
+    }
+
+    // Return if the field should be signed
+    pub fn sign(&self) -> bool {
+        self.sign
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +143,7 @@ pub enum FieldType {
     F32,
     F64,
     String,
+    Str,
     Vec,
     Bytes,
     Bool,
@@ -69,11 +152,11 @@ pub enum FieldType {
 
 impl FieldType {
     pub fn is_struct(field_type: impl TryInto<Self>) -> bool {
-        println!("Checking if field type is a struct");
+        // println!("Checking if field type is a struct");
 
         match field_type.try_into() {
-            Ok(FieldType::Struct(s)) => {
-                println!("Field Type is a struct: {:?}", s);
+            Ok(FieldType::Struct(_)) => {
+                // println!("Field Type is a struct: {:?}", s);
                 true
             }
             _ => false,
@@ -83,6 +166,8 @@ impl FieldType {
 
 impl From<&str> for FieldType {
     fn from(s: &str) -> Self {
+        // println!("Converting string to field type: {:?}", s);
+
         match s {
             "u8" => FieldType::U8,
             "u16" => FieldType::U16,
@@ -96,6 +181,9 @@ impl From<&str> for FieldType {
             "f32" => FieldType::F32,
             "f64" => FieldType::F64,
             "String" => FieldType::String,
+            "& 'static str" => FieldType::Str,
+            "& 'a str" => FieldType::Str,
+            "&str" => FieldType::Str,
             "Vec<u8>" => FieldType::Bytes,
             "&[u8]" => FieldType::Bytes,
             "[u8]" => FieldType::Bytes,
@@ -121,10 +209,11 @@ impl From<u8> for FieldType {
             9 => FieldType::F32,
             10 => FieldType::F64,
             11 => FieldType::String,
-            12 => FieldType::Vec,
-            13 => FieldType::Bytes,
-            14 => FieldType::Bool,
-            15 => FieldType::Struct(StructNameAsBytes::new()),
+            12 => FieldType::Str,
+            13 => FieldType::Vec,
+            14 => FieldType::Bytes,
+            15 => FieldType::Bool,
+            16 => FieldType::Struct(StructNameAsBytes::new()),
             _ => todo!("Handle unknown field type"),
         }
     }
@@ -145,10 +234,11 @@ impl Into<u8> for FieldType {
             FieldType::F32 => 9,
             FieldType::F64 => 10,
             FieldType::String => 11,
-            FieldType::Vec => 12,
-            FieldType::Bytes => 13,
-            FieldType::Bool => 14,
-            FieldType::Struct(_) => 15,
+            FieldType::Str => 12,
+            FieldType::Vec => 13,
+            FieldType::Bytes => 14,
+            FieldType::Bool => 15,
+            FieldType::Struct(_) => 16,
         }
     }
 }

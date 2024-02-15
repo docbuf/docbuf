@@ -1,3 +1,5 @@
+use docbuf_core::crypto::sha2;
+use docbuf_core::traits::{DocBuf, DocBufCrypto};
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};
 
@@ -5,11 +7,12 @@ use serde::{Deserialize, Serialize};
 #[docbuf {
     // Sign the entire document, will create an allocation for the document
     // signature
-    sign = "true";
+    sign = true;
     // Use the ed25519 signature algorithm
     // crypto = "ed25519";
     // Use the sha256 hash algorithm
     // hash = "sha256";
+    html = "path/to/html/template.html";
 }]
 pub struct Document {
     #[docbuf {
@@ -35,7 +38,7 @@ pub struct Document {
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize)]
 #[docbuf {
-    sign = "true";
+    sign = true;
 }]
 pub struct Metadata {
     // #[docbuf {
@@ -54,13 +57,11 @@ pub struct Signature {
     //     length = 32;
     // }]
     pub signature: String,
+    pub u8_data: u8,
 }
 
 #[test]
 fn test_docbuf_macros() -> Result<(), docbuf_core::error::Error> {
-    use docbuf_core::crypto::sha2;
-    use docbuf_core::traits::{DocBuf, DocBufCrypto};
-
     let document = Document {
         title: String::from("MyAwesomeDocument"),
         body: String::from("MyAwesomeDocument Contents"),
@@ -69,13 +70,22 @@ fn test_docbuf_macros() -> Result<(), docbuf_core::error::Error> {
             metadata: String::from("MyAwesomeDocument Metadata"),
             signature: Signature {
                 signature: String::from("MyAwesomeDocument Signature"),
+                u8_data: 0x0A,
             },
         },
     };
 
+    // let docbuf1 = document.to_docbuf()?;
+    // println!("\n\ndocbuf1: {:?}", docbuf1);
+
+    // let docbuf2 = document.to_docbuf()?;
+    // println!("\n\ndocbuf2: {:?}", docbuf2);
+
+    // assert_eq!(docbuf1, docbuf2);
+
     println!("document: {:?}", document);
-    let vtable = Document::vtable()?;
-    println!("vtable: {:#?}", vtable);
+    // let vtable = Document::vtable()?;
+    // println!("vtable: {:#?}", vtable);
 
     let mut hasher = sha2::Sha256::default();
     let hash = document.hash(&mut hasher)?;
@@ -83,18 +93,20 @@ fn test_docbuf_macros() -> Result<(), docbuf_core::error::Error> {
 
     let bytes = document.to_docbuf()?;
 
-    println!("bytes: {:?}", bytes);
-    println!("bytes length: {:?}", bytes.len());
+    println!("\n\ndocbuf bytes: {:?}", bytes);
+    println!("docbuf bytes length: {:?}", bytes.len());
 
     let bincode_bytes = bincode::serialize(&document).unwrap();
 
-    println!("bincode_bytes: {:?}", bincode_bytes);
+    println!("\n\nbincode_bytes: {:?}", bincode_bytes);
     println!("bincode_bytes length: {:?}", bincode_bytes.len());
+
+    assert!(bytes.len() <= bincode_bytes.len());
 
     let json_bytes = serde_json::to_string(&document).unwrap();
     let json_bytes = json_bytes.as_bytes();
 
-    println!("json_bytes: {:?}", json_bytes);
+    println!("\n\njson_bytes: {:?}", json_bytes);
     println!("json_bytes length: {:?}", json_bytes.len());
 
     assert!(bytes.len() <= json_bytes.len());
@@ -105,5 +117,3 @@ fn test_docbuf_macros() -> Result<(), docbuf_core::error::Error> {
 
     Ok(())
 }
-
-fn main() {}

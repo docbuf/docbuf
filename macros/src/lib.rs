@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 
-// 
+//
 use docbuf_core::macros::{derive, proc_macro2, quote::quote};
 
 #[proc_macro_derive(DocBuf)]
@@ -21,17 +21,17 @@ pub fn derive_docbuf(input: TokenStream) -> TokenStream {
 
     quote! {
         #impl_docbuf
-    }.into()
+    }
+    .into()
 }
-
 
 #[proc_macro_attribute]
 pub fn docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
-    println!("Parsing DocBuf Derive macro"); 
-    
+    println!("Parsing DocBuf Derive macro");
+
     let attr = proc_macro2::TokenStream::from(attr);
     let item = proc_macro2::TokenStream::from(item);
-    
+
     derive::derive_docbuf(attr.clone(), item.clone()).into()
 }
 

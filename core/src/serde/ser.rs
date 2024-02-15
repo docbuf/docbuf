@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::Serialize;
 
 use crate::vtable::*;
@@ -9,11 +11,78 @@ pub const GIGABYTES: usize = 1024 * 1024 * 1024;
 // Maximum size of a field in a struct
 pub const MAX_FIELD_SIZE: usize = GIGABYTES;
 
+pub struct DocBufVTableDataMap(HashMap<StructIndex, HashMap<FieldIndex, Vec<u8>>>);
+
+impl DocBufVTableDataMap {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub fn insert(&mut self, struct_index: StructIndex, field_index: FieldIndex, data: Vec<u8>) {
+        self.0
+            .entry(struct_index)
+            .or_insert(HashMap::new())
+            .insert(field_index, data);
+    }
+
+    // Retrieve the data for a field and struct index
+    pub fn retrieve(
+        &mut self,
+        struct_index: StructIndex,
+        field_index: FieldIndex,
+    ) -> Option<Vec<u8>> {
+        let entry = self.0.entry(struct_index).or_insert(HashMap::new());
+
+        if entry.is_empty() {
+            self.0.remove(&struct_index);
+            return None;
+        }
+
+        entry.remove(&field_index)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 pub struct DocBufSerializer {
     pub vtable: VTable,
-    pub output: Vec<u8>,
+    pub data_map: DocBufVTableDataMap,
+    // pub output: Vec<u8>,
     pub current_struct_index: u8,
     pub current_field_index: u8,
+}
+
+impl DocBufSerializer {
+    pub fn serialize_data_map(&mut self) -> Vec<u8> {
+        let mut current_struct_index = 0;
+        let mut current_field_index = 0;
+
+        let mut bytes = Vec::new();
+
+        while !self.data_map.is_empty() {
+            let data = self
+                .data_map
+                .retrieve(current_struct_index, current_field_index);
+
+            match data {
+                Some(data) => {
+                    bytes.extend_from_slice(&data);
+                    current_field_index += 1;
+                }
+                None => {
+                    // Reset the field index and increment the struct index
+                    current_struct_index += 1;
+                    current_field_index = 0;
+                }
+            }
+        }
+
+        println!("Serialized Bytes: {:?}", bytes);
+
+        bytes
+    }
 }
 
 pub fn to_docbuf<T>(value: &T) -> Result<Vec<u8>>
@@ -22,14 +91,15 @@ where
 {
     let mut serializer = DocBufSerializer {
         vtable: T::vtable()?,
-        output: Vec::new(),
+        data_map: DocBufVTableDataMap::new(),
+        // output: Vec::new(),
         current_struct_index: 0,
         current_field_index: 0,
     };
 
     value.serialize(&mut serializer)?;
 
-    Ok(serializer.output)
+    Ok(serializer.serialize_data_map())
 }
 
 impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
@@ -65,6 +135,11 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
                     name
                 )));
             }
+        } else {
+            return Err(Error::Serde(format!(
+                "Struct {} not found in the vtable",
+                name
+            )));
         }
 
         Ok(self)
@@ -111,8 +186,6 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        let mut encoded = vec![self.current_struct_index, self.current_field_index];
-
         let bytes = v.as_bytes().to_vec();
 
         // println!("Bytes: {:?}", bytes);
@@ -125,24 +198,43 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
             return Err(Error::Serde(msg));
         }
 
-        let data_length = bytes.len().to_le_bytes();
-
+        let data_length = (bytes.len() as u32).to_le_bytes();
+        let mut encoded = Vec::with_capacity(bytes.len() + 4);
         // println!("Data length: {:?}", data_length);
-
-        // Return only the first four bytes (0..4) of the data
-        let data_length = data_length[0..4].to_vec();
-
         encoded.extend_from_slice(data_length.as_slice());
         // encoded.push(LENGTH_SEPARATOR);
         encoded.extend_from_slice(&bytes);
 
-        self.output.extend_from_slice(&encoded);
+        // self.output.extend_from_slice(&encoded);
+
+        self.data_map
+            .insert(self.current_struct_index, self.current_field_index, encoded);
 
         Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
-        unimplemented!("serialize_u8")
+        // println!("Serializing u8: {:?}", v);
+        // println!("Current struct index: {:?}", self.current_struct_index);
+        // println!("Current field index: {:?}", self.current_field_index);
+
+        // let mut encoded = vec![self.current_struct_index, self.current_field_index];
+
+        // // Single byte has a fixed length of 1
+        // let data_length = 1u32.to_le_bytes();
+
+        // encoded.extend_from_slice(data_length.as_ref());
+
+        // encoded.push(v);
+
+        // // println!("Encoded u8: {:?}", encoded);
+
+        // self.output.extend_from_slice(&encoded);
+
+        self.data_map
+            .insert(self.current_struct_index, self.current_field_index, vec![v]);
+
+        Ok(())
     }
 
     fn serialize_u16(self, v: u16) -> Result<Self::Ok> {

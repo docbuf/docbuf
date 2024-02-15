@@ -23,7 +23,12 @@ impl VTableStruct {
         }
     }
 
-    pub fn add_field(&mut self, field_type: impl Into<FieldType>, field_name: &str) {
+    pub fn add_field(
+        &mut self,
+        field_type: impl Into<FieldType>,
+        field_name: &str,
+        field_rules: FieldRules,
+    ) {
         let field_index = self.num_fields;
 
         let field = VTableField::new(
@@ -31,6 +36,7 @@ impl VTableStruct {
             field_type.into(),
             field_index,
             field_name,
+            field_rules,
         );
         self.fields.insert(field.clone().field_name_as_bytes, field);
         self.num_fields += 1;
@@ -93,7 +99,6 @@ impl VTableStruct {
         for field in self.fields.values() {
             println!("VTable Field: {:?}", field.to_bytes());
             bytes.extend_from_slice(&field.to_bytes());
-            bytes.push(FIELD_SEPARATOR);
         }
 
         bytes

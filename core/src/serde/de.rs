@@ -13,6 +13,22 @@ use crate::{error::Error, traits::DocBuf, Result};
 pub struct DocBufRawValues(HashMap<StructIndex, HashMap<FieldIndex, Vec<u8>>>);
 
 impl DocBufRawValues {
+    pub fn new() -> Self {
+        DocBufRawValues(HashMap::new())
+    }
+
+    pub fn insert_value(
+        &mut self,
+        struct_index: StructIndex,
+        field_index: FieldIndex,
+        value: Vec<u8>,
+    ) {
+        self.0
+            .entry(struct_index)
+            .or_insert_with(HashMap::new)
+            .insert(field_index, value);
+    }
+
     pub fn get(&self, struct_index: StructIndex, field_index: FieldIndex) -> Option<&Vec<u8>> {
         self.0.get(&struct_index)?.get(&field_index)
     }
@@ -38,6 +54,71 @@ impl DocBufRawValues {
 
         value
     }
+
+    pub fn parse_bytes_input(vtable: &VTable, input: &[u8]) -> Result<Self> {
+        let mut current_struct_index = 0;
+        let mut current_field_index = 0;
+
+        let mut data = Self::new();
+        let mut input = input.to_vec();
+
+        while !input.is_empty() {
+            println!("Parsing Bytes Input: {:#?}", input.len());
+            match vtable.get_struct_field_by_index(current_struct_index, current_field_index) {
+                Ok(field) => {
+                    println!("Field: {:?}", field);
+                    println!("Current Struct Index: {:#?}", current_struct_index);
+                    println!("Current Field Index: {:#?}", current_field_index);
+
+                    match &field.field_type {
+                        FieldType::String => {
+                            let field_length = usize::from_le_bytes([
+                                input[0], input[1], input[2], input[3], 0, 0, 0, 0,
+                            ]);
+                            let field_end = 4 + field_length;
+                            let field_data = input[4..field_end].to_vec();
+
+                            data.insert_value(
+                                current_struct_index,
+                                current_field_index,
+                                field_data,
+                            );
+
+                            input = input[field_end..].to_vec();
+                        }
+                        FieldType::U8 => {
+                            let field_data = input[0..1].to_vec();
+
+                            data.insert_value(
+                                current_struct_index,
+                                current_field_index,
+                                field_data,
+                            );
+
+                            input = input[1..].to_vec();
+                        }
+                        FieldType::Struct(struct_name) => {
+                            // unimplemented!(
+                            //     "parse_bytes_input Struct Field Type: {:#?}",
+                            //     struct_name
+                            // );
+                        }
+                        _ => {
+                            unimplemented!("parse_bytes_input Field Type: {:#?}", field.field_type);
+                        }
+                    }
+
+                    current_field_index += 1;
+                }
+                _ => {
+                    current_struct_index += 1;
+                    current_field_index = 0;
+                }
+            }
+        }
+
+        Ok(data)
+    }
 }
 
 impl<'de> From<&'de [u8]> for DocBufRawValues {
@@ -52,8 +133,6 @@ impl<'de> From<&'de [u8]> for DocBufRawValues {
                 usize::from_le_bytes([data[2], data[3], data[4], data[5], 0, 0, 0, 0]);
             let field_end = 6 + field_length;
             let field_data = data[6..field_end].to_vec();
-
-            // println!("Field Data: {:#?}", field_data);
 
             raw_values
                 .entry(struct_index)
@@ -77,15 +156,18 @@ pub struct DocBufDeserializer {
 }
 
 impl<'de> DocBufDeserializer {
-    pub fn from_docbuf(vtable: VTable, input: &'de [u8]) -> Self {
-        let raw_values = DocBufRawValues::from(input);
-        DocBufDeserializer {
+    pub fn from_docbuf(vtable: VTable, input: &'de [u8]) -> Result<Self> {
+        let raw_values = DocBufRawValues::parse_bytes_input(&vtable, input)?;
+
+        // println!("Raw Values: {:#?}", raw_values);
+
+        Ok(DocBufDeserializer {
             vtable,
             // input,
             raw_values,
             current_struct_index: 0,
             current_field_index: 0,
-        }
+        })
     }
 
     pub fn increment_current_field_index(&mut self) {
@@ -98,7 +180,7 @@ where
     T: Deserialize<'de> + DocBuf,
 {
     let vtable = T::vtable()?;
-    let mut deserializer = DocBufDeserializer::from_docbuf(vtable, input);
+    let mut deserializer = DocBufDeserializer::from_docbuf(vtable, input)?;
 
     // println!("Deserializer: {:#?}", deserializer);
 
@@ -107,7 +189,7 @@ where
     if deserializer.raw_values.is_empty() {
         Ok(t)
     } else {
-        println!("Raw Values: {:#?}", deserializer.raw_values);
+        // println!("Raw Values: {:#?}", deserializer.raw_values);
 
         Err(Error::Serde("Unhandled trailing bytes".to_string()))
     }
@@ -120,7 +202,7 @@ impl<'de> serde::de::MapAccess<'de> for &mut DocBufDeserializer {
     where
         K: DeserializeSeed<'de>,
     {
-        println!("next_key_seed");
+        // println!("next_key_seed");
 
         let field_data = self
             .raw_values
@@ -167,14 +249,14 @@ impl<'de> serde::de::MapAccess<'de> for &mut DocBufDeserializer {
     where
         V: DeserializeSeed<'de>,
     {
-        println!("next_value_seed");
+        // println!("next_value_seed");
 
         let data = self
             .raw_values
             .remove(self.current_struct_index, self.current_field_index)
             .unwrap_or_default();
 
-        println!("Reading Field Data: {:#?}", data);
+        // println!("Reading Field Data: {:#?}", data);
 
         // if field.is_none() {
         //     // Field cannot be found for current struct and field indexes
@@ -245,7 +327,33 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_u8")
+        // println!("\n\nDeserialize u8");
+        // println!("Current Struct Index: {:#?}", self.current_struct_index);
+        // println!("Current Field Index: {:#?}", self.current_field_index);
+
+        let field_data = self
+            .raw_values
+            .remove(self.current_struct_index, self.current_field_index)
+            .unwrap_or_default();
+
+        // println!("Field Data: {:#?}", field_data);
+
+        let field_info = self
+            .vtable
+            .struct_by_index(&self.current_struct_index)?
+            .field_by_index(&self.current_field_index)?;
+
+        let name = field_info.field_name_as_string()?;
+
+        // println!("Field Name: {:#?}", name);
+
+        let value = field_data.first().unwrap_or(&0);
+        // .ok_or(Error::Serde("No u8 value".to_string()))?;
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_u8(*value)
     }
 
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
@@ -294,9 +402,9 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     where
         V: Visitor<'de>,
     {
-        println!("\n\nDeserialize String");
-        println!("Current Struct Index: {:#?}", self.current_struct_index);
-        println!("Current Field Index: {:#?}", self.current_field_index);
+        // println!("\n\nDeserialize String");
+        // println!("Current Struct Index: {:#?}", self.current_struct_index);
+        // println!("Current Field Index: {:#?}", self.current_field_index);
 
         let field_data = self
             .raw_values
@@ -320,9 +428,9 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     where
         V: Visitor<'de>,
     {
-        println!("\n\nDeserialize String");
-        println!("Current Struct Index: {:#?}", self.current_struct_index);
-        println!("Current Field Index: {:#?}", self.current_field_index);
+        // println!("\n\nDeserialize String");
+        // println!("Current Struct Index: {:#?}", self.current_struct_index);
+        // println!("Current Field Index: {:#?}", self.current_field_index);
 
         let field_data = self
             .raw_values
@@ -388,7 +496,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     where
         V: Visitor<'de>,
     {
-        println!("deserialize_seq: {:#?}", self.current_struct_index);
+        // println!("deserialize_seq: {:#?}", self.current_struct_index);
 
         let value = visitor.visit_seq(self)?;
 
@@ -432,22 +540,22 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     where
         V: Visitor<'de>,
     {
-        println!("deserialize_struct: {:#?}", name);
+        // println!("deserialize_struct: {:#?}", name);
 
         // visit the struct name
         // let value = visitor.visit_newtype_struct(self)?;
 
-        println!("deserialize_struct: {:#?}", fields);
+        // println!("deserialize_struct: {:#?}", fields);
 
         // find the struct index for the name
         let current_struct = self.vtable.struct_by_name(name)?;
-
-        println!("Struct Index: {:#?}", current_struct.struct_index);
 
         // Set the current struct index;
         self.current_struct_index = current_struct.struct_index;
         // Reset the current field index
         self.current_field_index = 0;
+
+        // println!("Current Struct Index: {:#?}", self.current_struct_index);
 
         // // find the field indexes for the struct
         // for field in fields {
@@ -459,7 +567,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
         //     } = current_struct.field_by_name(field)?;
         //     match field_type {
         //         FieldType::String => {
-        //             println!("deserialize_struct: Field Type: String");
+        //                 println!("deserialize_struct: Field Type: String");
         //             if let Some(value) = self.raw_values.remove(*struct_index, *field_index) {
         //                 // parse string from bytes
         //                 let value = std::str::from_utf8(&value)?;
@@ -469,11 +577,11 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
         //             }
         //         }
         //         FieldType::Struct(name) => {
-        //             println!("deserialize_struct: Field Type: Struct");
+        //                 println!("deserialize_struct: Field Type: Struct");
 
         //             let name = std::str::from_utf8(name)?;
 
-        //             println!("deserialize_struct: Field Struct Type: {:#?}", name);
+        //                 println!("deserialize_struct: Field Struct Type: {:#?}", name);
 
         //             if let Some(value) = self.raw_values.remove(*struct_index, *field_index) {
         //                 // parse string from bytes
