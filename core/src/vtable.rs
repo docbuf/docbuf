@@ -17,9 +17,17 @@ pub enum Error {
     #[error("Field Not Found")]
     FieldNotFound,
     #[error(transparent)]
-    Utf8(#[from] std::string::FromUtf8Error),
+    FromUtf8(#[from] std::string::FromUtf8Error),
+    #[error(transparent)]
+    Utf8(#[from] std::str::Utf8Error),
     #[error(transparent)]
     Syn(#[from] syn::Error),
+    #[cfg(feature = "regex")]
+    #[error(transparent)]
+    #[cfg(feature = "regex")]
+    Regex(#[from] ::regex::Error),
+    #[error("Field Rules Invalid Regex: {0}")]
+    FieldRulesRegex(String),
 }
 
 #[cfg(test)]

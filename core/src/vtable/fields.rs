@@ -1,4 +1,9 @@
+use std::str::FromStr;
+
 pub use super::*;
+
+#[cfg(feature = "regex")]
+use crate::validate::regex::Regex;
 
 // Number of bytes in a gigabyte as a usize
 pub const GIGABYTES: usize = 1024 * 1024 * 1024;
@@ -64,7 +69,7 @@ impl VTableField {
 
     pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
         Ok(match &self.field_type {
-            FieldType::String => self.decode_field_data(bytes)?,
+            FieldType::String => self.decode_string_data(bytes)?,
             FieldType::U8 => {
                 let field_data = bytes.drain(0..1);
 
@@ -79,7 +84,7 @@ impl VTableField {
 
     // Decodes the field data from the bytes input.
     // Returns the raw field data and removes the field data from the bytes, including its length.
-    pub fn decode_field_data(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
+    pub fn decode_string_data(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
         let (encoded_length, field_data_length) = self.decode_field_data_length(bytes);
 
         if encoded_length == 0 {
@@ -105,24 +110,6 @@ impl VTableField {
         (encoded_length, u32::from_le_bytes(field_length) as usize)
     }
 
-    /// Pack the VTableField into a byte array
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        // struct index field belongs to
-        bytes.push(self.struct_index);
-
-        // field index
-        bytes.push(self.field_index);
-
-        // field type
-        bytes.push(self.field_type.clone().into());
-
-        // field name length
-        bytes.push(self.field_name_as_bytes.len() as u8);
-        bytes.extend_from_slice(self.field_name_as_bytes.as_slice());
-        bytes
-    }
-
     pub fn field_name_as_string(&self) -> Result<String, Error> {
         let name = String::from_utf8(self.field_name_as_bytes.clone())?;
         Ok(name)
@@ -131,7 +118,12 @@ impl VTableField {
     pub fn validate(&self, data: &[u8]) -> Result<(), Error> {
         match self.field_type {
             FieldType::String => {
+                // Check for string length rules
                 self.field_rules.check_data_length_field_rules(data.len())?;
+
+                // Check for regex rules
+                #[cfg(feature = "regex")]
+                self.field_rules.check_regex_field_rules(data)?;
             }
             _ => {
                 unimplemented!("validate Field Type: {:#?}", self.field_type);
@@ -152,6 +144,8 @@ pub struct FieldRules {
     pub min_length: Option<usize>,
     // An absolute length
     pub length: Option<usize>,
+    #[cfg(feature = "regex")]
+    pub regex: Option<Regex>,
     pub sign: bool,
 }
 
@@ -164,6 +158,7 @@ impl FieldRules {
             max_length: None,
             min_length: None,
             length: None,
+            regex: None,
             sign: false,
         }
     }
@@ -188,6 +183,12 @@ impl FieldRules {
         self
     }
 
+    #[cfg(feature = "regex")]
+    pub fn set_regex(mut self, value: &str) -> Self {
+        self.regex = Regex::from_str(value).ok();
+        self
+    }
+
     // Return the max length of the string
     pub fn max_length(&self) -> Option<usize> {
         self.max_length
@@ -203,6 +204,11 @@ impl FieldRules {
         self.length
     }
 
+    #[cfg(feature = "regex")]
+    pub fn regex(&self) -> Option<&::regex::Regex> {
+        self.regex.as_ref()
+    }
+
     // Return if the field should be ignored
     pub fn ignore(&self) -> bool {
         self.ignore
@@ -213,22 +219,40 @@ impl FieldRules {
         self.sign
     }
 
+    #[cfg(feature = "regex")]
+    pub fn check_regex_field_rules(&self, data: &[u8]) -> Result<(), Error> {
+        if let Some(regex_rules) = self.regex() {
+            if !regex_rules.is_match(std::str::from_utf8(data)?) {
+                let msg = format!("data does not match regex: {regex_rules}");
+                return Err(Error::FieldRulesRegex(msg));
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn check_data_length_field_rules(&self, length: usize) -> Result<(), Error> {
         if length > MAX_FIELD_SIZE {
             let msg = format!("data size exceeds 1 gigabyte");
             return Err(Error::FieldRulesLength(msg));
-        } else if let Some(length) = self.length {
-            if length != length as usize {
+        }
+
+        if let Some(length_rule) = self.length {
+            if length != length_rule {
                 let msg = format!("data size does not match required length: {length}");
                 return Err(Error::FieldRulesLength(msg));
             }
-        } else if let Some(max_length) = self.max_length {
-            if length > max_length as usize {
+        }
+
+        if let Some(max_length) = self.max_length {
+            if length > max_length {
                 let msg = format!("data size exceeds field max length: {max_length}");
                 return Err(Error::FieldRulesLength(msg));
             }
-        } else if let Some(min_length) = self.min_length {
-            if length < min_length as usize {
+        }
+
+        if let Some(min_length) = self.min_length {
+            if length < min_length {
                 let msg = format!("data size is less than min length: {min_length}");
                 return Err(Error::FieldRulesLength(msg));
             }
@@ -253,19 +277,21 @@ impl FieldRules {
 
     pub fn encoded_data_length(&self, bytes: &[u8]) -> usize {
         if let Some(length) = self.length {
-            return FieldRules::le_bytes_data_length(length).len();
+            FieldRules::le_bytes_data_length(length).len()
         } else if let Some(max_length) = self.max_length {
-            return FieldRules::le_bytes_data_length(max_length).len();
+            FieldRules::le_bytes_data_length(max_length).len()
         } else {
-            if 0 < bytes.len() && bytes.len() >= DEFAULT_FIELD_LENGTH_LE_BYTES {
+            if bytes.is_empty() {
+                0
+            } else if bytes.len() < DEFAULT_FIELD_LENGTH_LE_BYTES {
+                1
+            } else {
                 match [bytes[0], bytes[1], bytes[2], bytes[3]] {
                     [0, 0, 0, _] => 4,
                     [0, 0, _, _] => 3,
                     [0, _, _, _] => 2,
                     _ => 1,
                 }
-            } else {
-                return 0;
             }
         }
     }

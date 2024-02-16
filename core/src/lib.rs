@@ -1,10 +1,10 @@
-pub mod idl;
-pub mod traits;
-pub mod vtable;
-pub mod serde;
 pub mod error;
+pub mod idl;
 #[cfg(feature = "macros")]
 pub mod macros;
+pub mod serde;
+pub mod traits;
+pub mod vtable;
 
 #[cfg(feature = "crypto")]
 pub mod crypto {
@@ -14,7 +14,11 @@ pub mod crypto {
     pub use sha2;
 }
 
+#[cfg(feature = "validate")]
+pub mod validate {
+    // Re-export the necessary validation libraries for validating fields
+    pub use regex;
+}
+
 // Result type for the docbuf core crate
 pub type Result<T> = std::result::Result<T, error::Error>;
-
-

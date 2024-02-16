@@ -73,8 +73,6 @@ impl DocBufSerializer {
             }
         }
 
-        println!("Serialized Bytes: {:?}", bytes);
-
         bytes
     }
 }

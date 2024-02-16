@@ -91,24 +91,4 @@ impl VTableStruct {
         let name = String::from_utf8(self.struct_name_as_bytes.clone())?;
         Ok(name)
     }
-
-    // Pack the VTableStruct into a byte array
-    // [struct_index,struct_name_len,struct_name_bytes,num_fields,]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.push(self.struct_index);
-        // Add the number of fields
-        bytes.push(self.num_fields);
-        // struct name length
-        bytes.push(self.struct_name_as_bytes.len() as u8);
-        // struct name in bytes
-        bytes.extend_from_slice(self.struct_name_as_bytes.as_slice());
-
-        // Add the fields
-        for field in self.fields.values() {
-            bytes.extend_from_slice(&field.to_bytes());
-        }
-
-        bytes
-    }
 }

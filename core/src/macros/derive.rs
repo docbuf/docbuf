@@ -383,6 +383,12 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
                             field_rules.#key = Some(#value);
                         }
                     }
+                    #[cfg(feature = "regex")]
+                    "regex" => {
+                        quote! {
+                            field_rules.#key = ::docbuf_core::validate::regex::Regex::new(#value).ok();
+                        }
+                    }
                     _ => {
                         quote!()
                     }

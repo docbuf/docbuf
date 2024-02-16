@@ -42,18 +42,6 @@ impl VTable {
         }
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        for vtable_struct in self.structs.values() {
-            let packed_bytes = vtable_struct.to_bytes();
-            bytes.extend_from_slice(&packed_bytes);
-            // Add a separator value type of `0xFF`
-            // bytes.push(STRUCT_SEPARATOR);
-        }
-
-        bytes
-    }
-
     // Return the struct name from the struct index
     pub fn struct_by_index(&self, index: &StructIndex) -> Result<&VTableStruct, Error> {
         for vtable_struct in self.structs.values() {
@@ -105,6 +93,8 @@ impl VTable {
                     current_field_index += 1;
                 }
                 _ => {
+                    // This will error when the struct_index reaches the u8 max value (255)
+                    // if there is an unhandled error and the input data is not read
                     current_struct_index += 1;
                     current_field_index = 0;
                 }
