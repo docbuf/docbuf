@@ -29,7 +29,7 @@ pub fn benchmark_unsigned_integers(c: &mut Criterion) {
     let mut group = c.benchmark_group("benchmark_unsigned_integers");
 
     // Create an instance of a document
-    let u8_value = U8Value { u8_value: 255 };
+    let u8_value = U8Value { u8_value: u8::MAX };
 
     group.bench_with_input(
         BenchmarkId::new("DocBuf", u8_value.clone()),

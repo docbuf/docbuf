@@ -1,7 +1,5 @@
 use std::str::FromStr;
 
-use nom::AsBytes;
-
 pub use super::*;
 
 #[cfg(feature = "regex")]
