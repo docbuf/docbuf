@@ -31,7 +31,7 @@ pub trait DocBuf {
     fn from_docbuf(buf: &[u8]) -> Result<Self::DocBuf, error::Error>;
 
     /// Return the virtual table (vtable) for the document buffer
-    fn vtable() -> Result<VTable, error::Error>;
+    fn vtable() -> Result<&'static VTable<'static>, error::Error>;
 }
 
 #[cfg(feature = "crypto")]

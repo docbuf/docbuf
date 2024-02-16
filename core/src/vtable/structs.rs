@@ -3,21 +3,21 @@ use std::collections::HashMap;
 use super::*;
 
 pub type StructIndex = u8;
-pub type StructNameAsBytes = Vec<u8>;
+pub type StructNameAsBytes<'a> = &'a [u8];
 
 #[derive(Debug, Clone)]
-pub struct VTableStruct {
+pub struct VTableStruct<'a> {
     pub struct_index: StructIndex,
-    pub struct_name_as_bytes: Vec<u8>,
-    pub fields: HashMap<FieldNameAsBytes, VTableField>,
+    pub struct_name_as_bytes: StructNameAsBytes<'a>,
+    pub fields: HashMap<FieldNameAsBytes<'a>, VTableField<'a>>,
     pub num_fields: FieldIndex,
 }
 
-impl VTableStruct {
-    pub fn new(struct_name: &str, index: Option<u8>) -> Self {
+impl<'a> VTableStruct<'a> {
+    pub fn new(struct_name: &'a str, index: Option<u8>) -> Self {
         Self {
             struct_index: index.unwrap_or_default(),
-            struct_name_as_bytes: struct_name.as_bytes().to_vec(),
+            struct_name_as_bytes: struct_name.as_bytes(),
             fields: HashMap::new(),
             num_fields: 0,
         }
@@ -25,8 +25,8 @@ impl VTableStruct {
 
     pub fn add_field(
         &mut self,
-        field_type: impl Into<FieldType>,
-        field_name: &str,
+        field_type: impl Into<FieldType<'a>>,
+        field_name: &'a str,
         field_rules: FieldRules,
     ) {
         let field_index = self.num_fields;
@@ -88,7 +88,7 @@ impl VTableStruct {
     }
 
     pub fn struct_name_as_string(&self) -> Result<String, Error> {
-        let name = String::from_utf8(self.struct_name_as_bytes.clone())?;
+        let name = String::from_utf8(self.struct_name_as_bytes.to_vec())?;
         Ok(name)
     }
 }
