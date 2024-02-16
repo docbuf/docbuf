@@ -146,19 +146,29 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
             .remove(self.current_struct_index, self.current_field_index)
             .unwrap_or_default();
 
-        let value = field_data.first().unwrap_or(&0);
+        let value = u8::from_le_bytes([field_data[0]]);
 
         // Increment the field index
         self.increment_current_field_index();
 
-        visitor.visit_u8(*value)
+        visitor.visit_u8(value)
     }
 
-    fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_u16")
+        let field_data = self
+            .raw_values
+            .remove(self.current_struct_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value = u16::from_le_bytes([field_data[0], field_data[1]]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_u16(value)
     }
 
     fn deserialize_u32<V>(self, _visitor: V) -> Result<V::Value>

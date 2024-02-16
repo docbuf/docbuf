@@ -1,24 +1,26 @@
 #[cfg(test)]
 mod tests {
-    use docbuf_core::{error::Error, traits::DocBuf};
+    use docbuf_core::traits::DocBuf;
     use docbuf_macros::*;
     use serde::{Deserialize, Serialize};
 
-    use crate::SetTestValues;
+    use crate::{SetTestValues, TestHarness};
 
     // Run test cases for string values
-    fn run_test_cases<D: DocBuf + SetTestValues + Default>(
-        test_cases: Vec<(bool, &str)>,
-    ) -> Result<(), Error> {
+    fn run_test_cases<'de, D: TestHarness<'de>>(
+        test_cases: Vec<(bool, impl Into<String>)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut doc = D::default();
 
         for (expected, value) in test_cases {
-            doc.set_string_value(String::from(value));
+            doc.set_string_value(value.into());
 
             match expected {
                 true => {
-                    let bytes = doc.to_docbuf()?;
-                    D::from_docbuf(&bytes)?;
+                    let docbuf_bytes = doc.to_docbuf()?;
+                    D::from_docbuf(&docbuf_bytes)?;
+
+                    doc.assert_serialization_size()?;
                 }
                 false => {
                     assert!(doc.to_docbuf().is_err());
@@ -30,13 +32,13 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_lowercase() -> Result<(), Error> {
+    fn test_regex_lowercase() -> Result<(), Box<dyn std::error::Error>> {
         #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
         #[docbuf {}]
         pub struct Document {
             #[docbuf {
-                // Check only for lowercase letters with at least one character
-                regex = r"^[a-z]+$";
+                // Check only for lowercase letters with three characters
+                regex = r"^[a-z]{3}$";
             }]
             pub string_value: String,
         }
@@ -47,11 +49,13 @@ mod tests {
             }
         }
 
+        impl<'de> TestHarness<'de> for Document {}
+
         // Test cases
         let test_cases = vec![
-            (true, "el"),
-            (true, "helloword"),
-            (true, "abcdefghijklmnopqrstuvwxyz"),
+            (true, "ell"),
+            (false, "helloword"),
+            (false, "abcdefghijklmnopqrstuvwxyz"),
             (false, "ABCDEF"),
             (false, "Hello"),
             (false, "HelloWorld"),
@@ -59,6 +63,9 @@ mod tests {
             (false, "Hello, World!"),
             (false, ""),
             (false, "123"),
+            (true, "abc"),
+            (true, "def"),
+            (true, "ghi"),
         ];
 
         run_test_cases::<Document>(test_cases)?;
@@ -67,14 +74,13 @@ mod tests {
     }
 
     #[test]
-    fn test_regex_uuid() -> Result<(), Error> {
+    fn test_regex_uuid() -> Result<(), Box<dyn std::error::Error>> {
         #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
         #[docbuf {}]
         pub struct Document {
             #[docbuf {
                 // Check regex for uuid v4
                 regex = r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$";
-
             }]
             pub string_value: String,
         }
@@ -84,6 +90,8 @@ mod tests {
                 self.string_value = value;
             }
         }
+
+        impl<'de> TestHarness<'de> for Document {}
 
         // Test cases
         let test_cases = vec![
@@ -104,7 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn test_min_max_length() -> Result<(), Error> {
+    fn test_min_max_length() -> Result<(), Box<dyn std::error::Error>> {
         #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
         #[docbuf {}]
         pub struct Document {
@@ -121,6 +129,8 @@ mod tests {
             }
         }
 
+        impl<'de> TestHarness<'de> for Document {}
+
         // Test cases
         let test_cases = vec![
             (true, "Hello"),
@@ -136,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn test_length() -> Result<(), Error> {
+    fn test_length() -> Result<(), Box<dyn std::error::Error>> {
         #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
         #[docbuf {}]
         pub struct Document {
@@ -152,15 +162,19 @@ mod tests {
             }
         }
 
+        impl<'de> TestHarness<'de> for Document {}
+
         // Test cases
         let test_cases = vec![
             (true, "Hello"),
             (true, "abcde"),
+            (true, "ABCDE"),
             (false, "abcdef"),
             (false, "Hello, World!"),
             (false, "el"),
             (false, ""),
             (false, "123"),
+            (true, "12345"),
         ];
 
         run_test_cases::<Document>(test_cases)?;

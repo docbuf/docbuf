@@ -75,6 +75,20 @@ impl DocBufSerializer {
 
         bytes
     }
+
+    // Encode the data into the data map
+    pub fn encode_data(&mut self, data: impl AsRef<[u8]>) -> Result<()> {
+        let encoded = self
+            .vtable
+            .struct_by_index(&self.current_struct_index)?
+            .field_by_index(&self.current_field_index)?
+            .encode(data.as_ref())?;
+
+        self.data_map
+            .insert(self.current_struct_index, self.current_field_index, encoded);
+
+        Ok(())
+    }
 }
 
 pub fn to_docbuf<T>(value: &T) -> Result<Vec<u8>>
@@ -171,29 +185,21 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        let bytes = v.as_bytes().to_vec();
-
-        let encoded = self
-            .vtable
-            .struct_by_index(&self.current_struct_index)?
-            .field_by_index(&self.current_field_index)?
-            .encode(&bytes)?;
-
-        self.data_map
-            .insert(self.current_struct_index, self.current_field_index, encoded);
+        self.encode_data(v.as_bytes())?;
 
         Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
-        self.data_map
-            .insert(self.current_struct_index, self.current_field_index, vec![v]);
+        self.encode_data(v.to_le_bytes())?;
 
         Ok(())
     }
 
-    fn serialize_u16(self, _v: u16) -> Result<Self::Ok> {
-        unimplemented!("serialize_u16")
+    fn serialize_u16(self, v: u16) -> Result<Self::Ok> {
+        self.encode_data(v.to_le_bytes())?;
+
+        Ok(())
     }
 
     fn serialize_u32(self, _v: u32) -> Result<Self::Ok> {

@@ -56,11 +56,18 @@ impl VTableField {
         // Ensure the field data corresponds to the field rules
         self.validate(field_data)?;
 
-        let data_length = FieldRules::le_bytes_data_length(field_data.len());
+        let mut encoded = Vec::with_capacity(field_data.len());
 
-        let mut encoded = Vec::with_capacity(field_data.len() + data_length.len());
-        // Add the length of the data
-        encoded.extend_from_slice(data_length.as_slice());
+        match self.field_type {
+            FieldType::String => {
+                let data_length = FieldRules::le_bytes_data_length(field_data.len());
+
+                // Add the length of the data
+                encoded.extend_from_slice(data_length.as_slice());
+            }
+            _ => {}
+        }
+
         // Add the field data
         encoded.extend_from_slice(&field_data);
 
@@ -71,13 +78,20 @@ impl VTableField {
         Ok(match &self.field_type {
             FieldType::String => self.decode_string_data(bytes)?,
             FieldType::U8 => {
+                // println!("Decoding U8 data");
+
                 let field_data = bytes.drain(0..1);
+
+                field_data.collect()
+            }
+            FieldType::U16 => {
+                let field_data = bytes.drain(0..2);
 
                 field_data.collect()
             }
             FieldType::Struct(_) => Vec::new(),
             _ => {
-                unimplemented!("parse_bytes_input Field Type: {:#?}", self.field_type);
+                unimplemented!("Decode Field Type: {:#?}", self.field_type);
             }
         })
     }
@@ -124,6 +138,18 @@ impl VTableField {
                 // Check for regex rules
                 #[cfg(feature = "regex")]
                 self.field_rules.check_regex_field_rules(data)?;
+            }
+            FieldType::U8 => {
+                let data = u8::from_le_bytes([data[0]]);
+
+                // Check for value rules
+                self.field_rules.check_data_value_field_rules(data)?;
+            }
+            FieldType::U16 => {
+                let data = u16::from_le_bytes([data[0], data[1]]);
+
+                // Check for value rules
+                self.field_rules.check_data_value_field_rules(data)?;
             }
             _ => {
                 unimplemented!("validate Field Type: {:#?}", self.field_type);
@@ -255,6 +281,27 @@ impl FieldRules {
             if length < min_length {
                 let msg = format!("data size is less than min length: {min_length}");
                 return Err(Error::FieldRulesLength(msg));
+            }
+        };
+
+        Ok(())
+    }
+
+    // Check if u8 value is within the max and min value
+    pub fn check_data_value_field_rules(&self, value: impl Into<usize>) -> Result<(), Error> {
+        let value = value.into();
+
+        if let Some(max_value) = self.max_value {
+            if value > max_value {
+                let msg = format!("data value exceeds field max value: {max_value}");
+                return Err(Error::FieldRulesValue(msg));
+            }
+        }
+
+        if let Some(min_value) = self.min_value {
+            if value < min_value {
+                let msg = format!("data value is less than min value: {min_value}");
+                return Err(Error::FieldRulesValue(msg));
             }
         };
 

@@ -1,7 +1,7 @@
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error(transparent)]
-    IDL(#[from] crate::idl::error::Error),
+    // #[error(transparent)]
+    // IDL(#[from] crate::idl::error::Error),
     /// Serde Error Type
     #[error("Error: {0}")]
     Serde(String),

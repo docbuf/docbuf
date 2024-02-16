@@ -4,12 +4,14 @@ mod tests {
     use docbuf_macros::*;
     use serde::{Deserialize, Serialize};
 
+    use crate::{SetTestValues, TestHarness};
+
     #[test]
     fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
         use docbuf_core::crypto::sha2;
         use docbuf_core::traits::DocBufCrypto;
 
-        #[derive(Debug, Clone, DocBuf, Serialize, Deserialize)]
+        #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
         #[docbuf {
             // Sign the entire document, will create an allocation for the document
             // signature
@@ -42,7 +44,7 @@ mod tests {
             pub metadata: Metadata,
         }
 
-        #[derive(Debug, Clone, DocBuf, Serialize, Deserialize)]
+        #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
         #[docbuf {
             sign = true;
         }]
@@ -54,7 +56,7 @@ mod tests {
             pub signature: Signature,
         }
 
-        #[derive(Debug, Clone, DocBuf, Serialize, Deserialize)]
+        #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
         #[docbuf {
             sign = "true";
         }]
@@ -65,6 +67,10 @@ mod tests {
             pub signature: String,
             pub u8_data: u8,
         }
+
+        impl SetTestValues for Document {}
+
+        impl<'de> TestHarness<'de> for Document {}
 
         let document = Document {
             title: String::from("MyAwesomeDocument"),
@@ -85,29 +91,9 @@ mod tests {
         // let hash = document.hash(&mut hasher)?;
         // println!("hash: {:?}", hash);
 
-        let bytes = document.to_docbuf()?;
-
-        println!("\n\ndocbuf bytes: {:?}", bytes);
-        println!("docbuf bytes length: {:?}", bytes.len());
-
-        let bincode_bytes = bincode::serialize(&document).unwrap();
-
-        println!("\n\nbincode_bytes: {:?}", bincode_bytes);
-        println!("bincode_bytes length: {:?}", bincode_bytes.len());
-
-        assert!(bytes.len() <= bincode_bytes.len());
-
-        let json_bytes = serde_json::to_string(&document).unwrap();
-        let json_bytes = json_bytes.as_bytes();
-
-        println!("\n\njson_bytes: {:?}", json_bytes);
-        println!("json_bytes length: {:?}", json_bytes.len());
-
-        assert!(bytes.len() <= json_bytes.len());
-
-        let doc = Document::from_docbuf(&bytes)?;
-
-        println!("\n\ndoc: {:?}", doc);
+        document
+            .assert_serialization_size()
+            .expect("Failed encoding benchmark");
 
         Ok(())
     }

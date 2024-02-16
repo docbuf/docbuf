@@ -28,6 +28,8 @@ pub enum Error {
     Regex(#[from] ::regex::Error),
     #[error("Field Rules Invalid Regex: {0}")]
     FieldRulesRegex(String),
+    #[error("Field Rules Invalid Value: {0}")]
+    FieldRulesValue(String),
 }
 
 #[cfg(test)]

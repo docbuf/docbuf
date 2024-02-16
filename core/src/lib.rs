@@ -1,5 +1,5 @@
 pub mod error;
-pub mod idl;
+// pub mod idl;
 #[cfg(feature = "macros")]
 pub mod macros;
 pub mod serde;

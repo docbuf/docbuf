@@ -1,13 +1,10 @@
-use syntect::easy::HighlightLines;
-use syntect::highlighting::{Style, ThemeSet};
-use syntect::parsing::{SyntaxDefinition, SyntaxSetBuilder};
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-
-    use super::*;
+    use syntect::easy::HighlightLines;
+    use syntect::highlighting::{Style, ThemeSet};
+    use syntect::parsing::{SyntaxDefinition, SyntaxSetBuilder};
+    use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 
     #[test]
     fn test_highlighting() -> Result<(), Box<dyn std::error::Error>> {

@@ -32,21 +32,13 @@ pub struct DocBufOpts(HashMap<String, DocBufOpt>);
 
 impl From<TokenStream> for DocBufOpts {
     fn from(input: TokenStream) -> Self {
-
-        
         let mut iter = input.into_iter();
         let mut num_attr = iter.clone().count() / 4;
         let key_index = 0;
         let value_index = 1;
         let mut opts = HashMap::new();
 
-
-
         while num_attr > 0 {
-
-
-
-
             let mut span_iter = {
                 let mut span = Vec::new();
 
@@ -57,40 +49,39 @@ impl From<TokenStream> for DocBufOpts {
                 span.into_iter()
             };
 
-
-
             if let Some(key) = span_iter.nth(key_index) {
                 if let Some(value) = span_iter.nth(value_index) {
                     let key = key.to_string().replace("\"", "");
                     let value = value.to_string().replace("\"", "");
 
-
-
-                    
                     let value = match key.as_str() {
                         "sign" => DocBufOpt::Sign("true" == value.as_str()),
                         "crypto" => match value.as_str() {
                             "ed25519" => DocBufOpt::Crypto(DocBufCryptoAlgorithm::Ed25519),
-                            _ => { panic!("`crypto` options currently only supports `ed25519` value type.") }
-                        }
-                        "hash" => match value.as_str() {
-                            "sha256" => DocBufOpt::Hash(HashAlgorithm::Sha256),
-                            _ => { panic!("`hash` options currently only supports `sha256` value type.") }
+                            _ => {
+                                panic!("`crypto` options currently only supports `ed25519` value type.")
+                            }
+                        },
+                        "hash" => {
+                            match value.as_str() {
+                                "sha256" => DocBufOpt::Hash(HashAlgorithm::Sha256),
+                                _ => {
+                                    panic!("`hash` options currently only supports `sha256` value type.")
+                                }
+                            }
                         }
                         "html" => DocBufOpt::Html("true" == value.as_str()),
                         k => {
                             unimplemented!("Unsupported key: {}", k);
                         }
                     };
-        
+
                     opts.insert(key, value);
                 }
             }
 
             num_attr -= 1;
         }
-
-
 
         Self(opts)
     }
@@ -102,8 +93,6 @@ pub fn docbuf_attr(_attr: TokenStream, _item: TokenStream) -> TokenStream {
 }
 
 pub fn docbuf_item(item: TokenStream) -> TokenStream {
-
-
     let name = parse_item_name(&item);
     let fields = parse_item_fields(&item);
     let lifetimes = parse_item_lifetimes(&item);
@@ -117,7 +106,7 @@ pub fn docbuf_item(item: TokenStream) -> TokenStream {
     TokenStream::from(output)
 }
 
-pub fn docbuf_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn docbuf_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
 
     // let mut options = DocBufOpts::from(attr.clone());
@@ -128,7 +117,7 @@ pub fn docbuf_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let serialization_methods = docbuf_impl_serialization(item.clone());
     let vtable = docbuf_impl_vtable(item.clone());
-    
+
     let output = quote! {
         impl #lifetimes ::docbuf_core::traits::DocBuf for #name #lifetimes {
             type Doc = Self;
@@ -158,13 +147,15 @@ pub fn docbuf_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 // Impl docbuf signing for the input struct
-pub fn docbuf_impl_crypto(name: &TokenStream, item: &TokenStream, options: &mut DocBufOpts) -> TokenStream {
+pub fn docbuf_impl_crypto(
+    name: &TokenStream,
+    item: &TokenStream,
+    options: &mut DocBufOpts,
+) -> TokenStream {
     let mut output = Vec::new();
-    
+
     // Check if the sign option is present
     if let Some(DocBufOpt::Sign(true)) = options.0.get("sign") {
-
-
         let lifetimes = parse_item_lifetimes(item);
 
         output.push(quote! {
@@ -188,7 +179,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
         let name = field.ident.as_ref().unwrap();
         let ty = field.ty.to_token_stream();
         let rules = parse_field_rules(&field).expect("Failed to parse field rules");
-        
+
         match crate::vtable::FieldType::is_struct(ty.to_string().as_ref()) {
             true => {
                 let table_name = format!("{}_vtable", ty.to_string()).to_lowercase();
@@ -200,13 +191,13 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                 let scope = quote! {
                     // Lookup the vtable for the struct
                     let #table_name_var = #ty::vtable()?;
-                    
+
                     if let Some(#struct_name_var) = #table_name_var.structs.get(stringify!(#ty).as_bytes()) {
                         let field_type = ::docbuf_core::vtable::FieldType::Struct(#struct_name_var.clone().struct_name_as_bytes);
 
                         // Add the field rules to the vtable field
                         #rules
-                        
+
                         vtable_struct.add_field(field_type, stringify!(#name), field_rules);
                     }
 
@@ -227,7 +218,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                     vtable_struct.add_field(stringify!(#ty), stringify!(#name), field_rules);
                 }
             }
-        }        
+        }
     });
 
     let vtable = quote! {
@@ -250,13 +241,13 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 }
 
 // Impl docbuf serialization and deserialization for the input struct
-pub fn docbuf_impl_serialization(input: TokenStream) -> TokenStream {
+pub fn docbuf_impl_serialization(_input: TokenStream) -> TokenStream {
     let output = quote! {
         // Serialize the struct to a byte buffer
         fn to_docbuf(&self) -> Result<Vec<u8>, ::docbuf_core::error::Error> {
             Ok(::docbuf_core::serde::ser::to_docbuf(self)?)
         }
-    
+
         // Deserialize the byte buffer to a struct
         fn from_docbuf(buf: &[u8]) -> Result<Self, ::docbuf_core::error::Error> {
             Ok(::docbuf_core::serde::de::from_docbuf(buf)?)
@@ -268,8 +259,12 @@ pub fn docbuf_impl_serialization(input: TokenStream) -> TokenStream {
 
 pub fn docbuf_required_macros() -> TokenStream {
     let macros = vec![
-        "std::fmt::Debug", "Clone", "::serde::Serialize", "::serde::Deserialize"
-    ].join(", ");
+        "std::fmt::Debug",
+        "Clone",
+        "::serde::Serialize",
+        "::serde::Deserialize",
+    ]
+    .join(", ");
 
     let macros = TokenStream::from_str(&macros).unwrap();
 
@@ -285,7 +280,7 @@ pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut options = DocBufOpts::from(attr.clone());
 
     // Required derive macros
-    let derive_macros = docbuf_required_macros();
+    // let derive_macros = docbuf_required_macros();
 
     // let attr_docbuf = docbuf_attr(attr.clone(), item.clone());
     // parse the inner field attributes of the item
@@ -301,8 +296,6 @@ pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #crypto_methods
     };
-
-
 
     TokenStream::from(output)
 }
@@ -320,7 +313,7 @@ pub fn parse_item_fields(input: &TokenStream) -> TokenStream {
         let name = field.ident.as_ref().unwrap();
         let ty = field.ty.to_token_stream();
         let vis = &field.vis;
-    
+
         quote! {
             #vis #name: #ty
         }
@@ -332,8 +325,6 @@ pub fn parse_item_fields(input: &TokenStream) -> TokenStream {
 }
 
 pub fn parse_item_lifetimes(input: &TokenStream) -> TokenStream {
-
-    
     let ast: ItemStruct = syn::parse(input.to_owned().into()).unwrap();
 
     let lifetimes = ast.generics.lifetimes();
@@ -343,11 +334,8 @@ pub fn parse_item_lifetimes(input: &TokenStream) -> TokenStream {
         TokenStream::new()
     } else {
         let lifetimes = ast.generics.lifetimes().map(|lifetime| {
-
-    
-    
             let lifetime = lifetime.to_token_stream();
-    
+
             quote! {
                 #lifetime
             }
@@ -358,7 +346,6 @@ pub fn parse_item_lifetimes(input: &TokenStream) -> TokenStream {
         }
     }
 }
-
 
 // Parses the input and creates a token stream from the input
 // for constructing the field rules from the attributes input
@@ -376,8 +363,8 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
                             field_rules.#key = #value;
                         }
                     }
-                    "min_value" | "max_value" | 
-                    "min_length" | "max_length" | 
+                    "min_value" | "max_value" |
+                    "min_length" | "max_length" |
                     "length" => {
                         quote! {
                             field_rules.#key = Some(#value);
@@ -401,8 +388,6 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
         })
         .collect::<Result<Vec<TokenStream>, Error>>()?;
 
-
-
     let rules = quote!(
         let mut field_rules = ::docbuf_core::vtable::FieldRules::new();
 
@@ -412,9 +397,11 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
     Ok(rules)
 }
 
-pub fn parse_docbuf_field_attrs(input: TokenStream) -> Result<HashMap<String, (TokenTree, TokenTree)>, Error> {
+pub fn parse_docbuf_field_attrs(
+    input: TokenStream,
+) -> Result<HashMap<String, (TokenTree, TokenTree)>, Error> {
     let mut map = HashMap::new();
-    
+
     for attribute in input.into_iter() {
         match attribute {
             TokenTree::Group(group) => {
@@ -425,20 +412,17 @@ pub fn parse_docbuf_field_attrs(input: TokenStream) -> Result<HashMap<String, (T
                             let group_tokens = group.stream();
                             let mut key = None;
                             let mut value = None;
-                            
+
                             for group_token in group_tokens.into_iter() {
                                 match &group_token {
-                                    TokenTree::Ident(ident) => {
-                                        match ident.to_string().as_str() {
-                                            "true" | "false" => {
-                                                value = Some(group_token);
-                                            }
-                                            _ => {
-                                                key = Some(group_token);
-                                            }
+                                    TokenTree::Ident(ident) => match ident.to_string().as_str() {
+                                        "true" | "false" => {
+                                            value = Some(group_token);
                                         }
-                                        
-                                    }
+                                        _ => {
+                                            key = Some(group_token);
+                                        }
+                                    },
                                     TokenTree::Literal(_) => {
                                         value = Some(group_token);
                                     }
