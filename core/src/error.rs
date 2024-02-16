@@ -6,8 +6,6 @@ pub enum Error {
     #[error("Error: {0}")]
     Serde(String),
     #[cfg(feature = "ed25519")]
-    /// Ed25519 Signature Error
-    #[cfg(feature = "ed25519")]
     #[error(transparent)]
     #[cfg(feature = "ed25519")]
     Ed25519Signature(#[from] ed25519::signature::Error),

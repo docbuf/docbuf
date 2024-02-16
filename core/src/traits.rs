@@ -1,10 +1,12 @@
 use crate::error;
 
-use crate::{vtable::VTable};
+use crate::vtable::VTable;
 
 #[cfg(feature = "crypto")]
-use crate::crypto::{ed25519, digest::{self, Digest, HashMarker, FixedOutputReset, FixedOutput}};
-
+use crate::crypto::{
+    digest::{self, Digest, FixedOutput, FixedOutputReset, HashMarker},
+    ed25519,
+};
 
 pub trait DocBuf {
     // inner type for the Document Buffer
@@ -34,15 +36,14 @@ pub trait DocBuf {
 
 #[cfg(feature = "crypto")]
 pub trait DocBufCrypto: DocBuf {
-
     #[cfg(feature = "ed25519")]
     fn sign<D>(
-        &self, 
+        &self,
         digest: &mut D,
         signer: impl ed25519::signature::Signer<ed25519::Signature>,
     ) -> Result<ed25519::Signature, error::Error>
-        where D: 
-            Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker + 'static
+    where
+        D: Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker + 'static,
     {
         let data = self.hash(digest)?;
         let signature = signer.try_sign(&data)?;
@@ -53,11 +54,11 @@ pub trait DocBufCrypto: DocBuf {
     fn verify<D>(
         &self,
         digest: &mut D,
-        signature: &ed25519::Signature, 
-        verifier: impl ed25519::signature::Verifier<ed25519::Signature>
-    ) -> Result<(), error::Error> 
-     where D: 
-        Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker + 'static
+        signature: &ed25519::Signature,
+        verifier: impl ed25519::signature::Verifier<ed25519::Signature>,
+    ) -> Result<(), error::Error>
+    where
+        D: Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker + 'static,
     {
         // Re-compute the data hash message that was signed.
         let data = self.hash(digest)?;
@@ -70,7 +71,8 @@ pub trait DocBufCrypto: DocBuf {
 
     #[cfg(feature = "digest")]
     fn hash<D>(&self, digest: &mut D) -> Result<Vec<u8>, error::Error>
-        where D: Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker + 'static
+    where
+        D: Default + Digest + Clone + FixedOutput + FixedOutputReset + HashMarker + 'static,
     {
         // Hash the document buffer contents
         use digest::DynDigest;

@@ -1,9 +1,16 @@
+// pub mod benchmarks;
 pub mod complex;
 pub mod strings;
 pub mod unsigned_integers;
 
 use docbuf_core::traits::DocBuf;
 use serde::{Deserialize, Serialize};
+
+// Re-export testing dependencies
+pub mod test_deps {
+    pub use bincode;
+    pub use serde_json;
+}
 
 trait TestHarness<'de>: DocBuf + SetTestValues + Default + Deserialize<'de> + Serialize {
     /// Assert the serialization size of the document buffer is less than or equal to the size of the

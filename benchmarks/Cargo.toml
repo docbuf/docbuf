@@ -1,0 +1,14 @@
+[package]
+name = "docbuf-benchmarks"
+version = "0.1.0"
+edition = "2021"
+
+[[bench]]
+name = "docbuf_benchmarks"
+path = "src/main.rs"
+harness = false
+
+[dependencies]
+docbuf-core = { path = "../core" }
+docbuf-tests = { path = "../tests" }
+criterion = "0.5.1"
