@@ -79,26 +79,26 @@ impl<'a> VTableField<'a> {
         }
     }
 
-    pub fn encode(&self, field_data: &[u8]) -> Result<Vec<u8>, Error> {
+    pub fn encode(&self, field_data: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
         // Ensure the field data corresponds to the field rules
         self.validate(field_data)?;
 
-        let mut encoded = Vec::with_capacity(field_data.len());
+        // let mut encoded = Vec::with_capacity(field_data.len());
 
         match self.field_type {
             FieldType::String => {
                 let data_length = FieldRules::le_bytes_data_length(field_data.len());
 
                 // Add the length of the data
-                encoded.extend_from_slice(data_length.as_bytes());
+                output.extend_from_slice(data_length.as_bytes());
             }
             _ => {}
         }
 
         // Add the field data
-        encoded.extend_from_slice(&field_data);
+        output.extend_from_slice(&field_data);
 
-        Ok(encoded)
+        Ok(())
     }
 
     pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {

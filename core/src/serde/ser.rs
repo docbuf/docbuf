@@ -22,13 +22,10 @@ impl DocBufSerializer {
 
     // Encode the data into the data map
     pub fn encode_data(&mut self, data: impl AsRef<[u8]>) -> Result<()> {
-        let encoded = self
-            .vtable
+        self.vtable
             .struct_by_index(&self.current_struct_index)?
             .field_by_index(&self.current_field_index)?
-            .encode(data.as_ref())?;
-
-        self.output.extend_from_slice(&encoded);
+            .encode(data.as_ref(), &mut self.output)?;
 
         Ok(())
     }
