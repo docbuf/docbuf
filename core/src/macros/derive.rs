@@ -190,7 +190,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 
                 let scope = quote! {
                     // Lookup the vtable for the struct
-                    let #table_name_var = #ty::vtable()?;
+                    let #table_name_var = #ty::vtable().expect("Failed to lookup vtable for struct");
 
                     if let Some(#struct_name_var) = #table_name_var.structs.get(stringify!(#ty).as_bytes()) {
                         let field_type = ::docbuf_core::vtable::FieldType::Struct(#struct_name_var.clone().struct_name_as_bytes);
@@ -222,18 +222,22 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
     });
 
     let vtable = quote! {
-        fn vtable() -> Result<::docbuf_core::vtable::VTable, ::docbuf_core::error::Error> {
-            let mut vtable =  ::docbuf_core::vtable::VTable::new();
+        fn vtable() -> Result<&'static ::docbuf_core::vtable::VTable<'static>, ::docbuf_core::error::Error> {
+            static VTABLE: ::std::sync::OnceLock<::docbuf_core::vtable::VTable> = ::std::sync::OnceLock::new();
 
-            let mut vtable_struct = ::docbuf_core::vtable::VTableStruct::new(stringify!(#name), None);
+            Ok(VTABLE.get_or_init(|| {
+                let mut vtable =  ::docbuf_core::vtable::VTable::new();
 
-            // Add the fields to the vtable
-            #(#fields)*
+                let mut vtable_struct = ::docbuf_core::vtable::VTableStruct::new(stringify!(#name), None);
 
-            // Create a vtable_struct for the input struct
-            vtable.add_struct(vtable_struct);
+                // Add the fields to the vtable
+                #(#fields)*
 
-            Ok(vtable)
+                // Create a vtable_struct for the input struct
+                vtable.add_struct(vtable_struct);
+
+                vtable
+            }))
         }
     };
 

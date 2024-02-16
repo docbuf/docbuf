@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use nom::AsBytes;
+
 pub use super::*;
 
 #[cfg(feature = "regex")]
@@ -19,26 +21,53 @@ pub const U16_MAX: usize = u16::MAX as usize;
 pub const U32_MAX: usize = u32::MAX as usize;
 pub const U64_MAX: usize = u64::MAX as usize;
 
+pub enum LeBytes {
+    U8([u8; 1]),
+    U16([u8; 2]),
+    U32([u8; 4]),
+    U64([u8; 8]),
+}
+
+impl LeBytes {
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            LeBytes::U8(bytes) => bytes,
+            LeBytes::U16(bytes) => bytes,
+            LeBytes::U32(bytes) => bytes,
+            LeBytes::U64(bytes) => bytes,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            LeBytes::U8(_) => 1,
+            LeBytes::U16(_) => 2,
+            LeBytes::U32(_) => 4,
+            LeBytes::U64(_) => 8,
+        }
+    }
+}
+
 pub type FieldIndex = u8;
-pub type FieldNameAsBytes = Vec<u8>;
+pub type FieldNameAsBytes<'a> = &'a [u8];
 
 #[derive(Debug, Clone)]
-pub struct VTableField {
+pub struct VTableField<'a> {
     // The index of the struct this field belongs to
     pub struct_index: StructIndex,
     // The type of the field
-    pub field_type: FieldType,
+    pub field_type: FieldType<'a>,
     pub field_index: FieldIndex,
-    pub field_name_as_bytes: FieldNameAsBytes,
+    pub field_name_as_bytes: FieldNameAsBytes<'a>,
     pub field_rules: FieldRules,
 }
 
-impl VTableField {
+impl<'a> VTableField<'a> {
     pub fn new(
         struct_index: StructIndex,
-        field_type: FieldType,
+        field_type: FieldType<'a>,
         field_index: FieldIndex,
-        field_name: &str,
+        field_name: &'a str,
         field_rules: FieldRules,
     ) -> Self {
         // println!("Field Rules: {:?}", field_rules);
@@ -47,7 +76,7 @@ impl VTableField {
             struct_index,
             field_type,
             field_index,
-            field_name_as_bytes: field_name.as_bytes().to_vec(),
+            field_name_as_bytes: field_name.as_bytes(),
             field_rules,
         }
     }
@@ -63,7 +92,7 @@ impl VTableField {
                 let data_length = FieldRules::le_bytes_data_length(field_data.len());
 
                 // Add the length of the data
-                encoded.extend_from_slice(data_length.as_slice());
+                encoded.extend_from_slice(data_length.as_bytes());
             }
             _ => {}
         }
@@ -125,7 +154,7 @@ impl VTableField {
     }
 
     pub fn field_name_as_string(&self) -> Result<String, Error> {
-        let name = String::from_utf8(self.field_name_as_bytes.clone())?;
+        let name = String::from_utf8(self.field_name_as_bytes.to_vec())?;
         Ok(name)
     }
 
@@ -308,17 +337,17 @@ impl FieldRules {
         Ok(())
     }
 
-    pub fn le_bytes_data_length(length: usize) -> Vec<u8> {
+    pub fn le_bytes_data_length(length: usize) -> LeBytes {
         if length <= U8_MAX {
-            (length as u8).to_le_bytes().to_vec()
+            LeBytes::U8((length as u8).to_le_bytes())
         } else if U8_MAX < length && length <= U16_MAX {
-            (length as u16).to_le_bytes().to_vec()
+            LeBytes::U16((length as u16).to_le_bytes())
         } else if U16_MAX < length && length <= U32_MAX {
-            (length as u32).to_le_bytes().to_vec()
+            LeBytes::U32((length as u32).to_le_bytes())
         } else if U32_MAX < length && length <= U64_MAX {
-            (length as u64).to_le_bytes().to_vec()
+            LeBytes::U64((length as u64).to_le_bytes())
         } else {
-            (length as u32).to_le_bytes().to_vec()
+            LeBytes::U32((length as u32).to_le_bytes())
         }
     }
 
@@ -345,7 +374,7 @@ impl FieldRules {
 }
 
 #[derive(Debug, Clone)]
-pub enum FieldType {
+pub enum FieldType<'a> {
     U8,
     U16,
     U32,
@@ -362,10 +391,10 @@ pub enum FieldType {
     Vec,
     Bytes,
     Bool,
-    Struct(StructNameAsBytes),
+    Struct(StructNameAsBytes<'a>),
 }
 
-impl FieldType {
+impl<'a> FieldType<'a> {
     pub fn is_struct(field_type: impl TryInto<Self>) -> bool {
         // println!("Checking if field type is a struct");
 
@@ -379,8 +408,8 @@ impl FieldType {
     }
 }
 
-impl From<&str> for FieldType {
-    fn from(s: &str) -> Self {
+impl<'a> From<&'a str> for FieldType<'a> {
+    fn from(s: &'a str) -> Self {
         // println!("Converting string to field type: {:?}", s);
 
         match s {
@@ -404,12 +433,12 @@ impl From<&str> for FieldType {
             "[u8]" => FieldType::Bytes,
             "Vec" => FieldType::Vec,
             "bool" => FieldType::Bool,
-            s => FieldType::Struct(s.as_bytes().to_vec()),
+            s => FieldType::Struct(s.as_bytes()),
         }
     }
 }
 
-impl From<u8> for FieldType {
+impl<'a> From<u8> for FieldType<'a> {
     fn from(byte: u8) -> Self {
         match byte {
             0 => FieldType::U8,
@@ -428,13 +457,13 @@ impl From<u8> for FieldType {
             13 => FieldType::Vec,
             14 => FieldType::Bytes,
             15 => FieldType::Bool,
-            16 => FieldType::Struct(StructNameAsBytes::new()),
+            16 => FieldType::Struct(&[]),
             _ => todo!("Handle unknown field type"),
         }
     }
 }
 
-impl Into<u8> for FieldType {
+impl<'a> Into<u8> for FieldType<'a> {
     fn into(self) -> u8 {
         match self {
             FieldType::U8 => 0,

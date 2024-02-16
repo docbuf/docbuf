@@ -41,7 +41,7 @@ impl DocBufVTableDataMap {
 }
 
 pub struct DocBufSerializer {
-    pub vtable: VTable,
+    pub vtable: &'static VTable<'static>,
     pub data_map: DocBufVTableDataMap,
     // pub output: Vec<u8>,
     pub current_struct_index: u8,

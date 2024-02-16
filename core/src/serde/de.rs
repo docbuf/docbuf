@@ -6,14 +6,14 @@ use crate::{error::Error, traits::DocBuf, Result};
 
 #[derive(Debug)]
 pub struct DocBufDeserializer {
-    vtable: VTable,
+    vtable: &'static VTable<'static>,
     raw_values: DocBufRawValues,
     current_struct_index: StructIndex,
     current_field_index: FieldIndex,
 }
 
 impl<'de> DocBufDeserializer {
-    pub fn from_docbuf(vtable: VTable, input: &'de [u8]) -> Result<Self> {
+    pub fn from_docbuf(vtable: &'static VTable, input: &'de [u8]) -> Result<Self> {
         // Parse the raw values according to the vtable rules
         let raw_values = vtable.parse_raw_values(input)?;
 

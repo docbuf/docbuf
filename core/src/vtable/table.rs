@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use super::*;
 
 #[derive(Debug, Clone)]
-pub struct VTable {
-    pub structs: HashMap<StructNameAsBytes, VTableStruct>,
+pub struct VTable<'a> {
+    pub structs: HashMap<StructNameAsBytes<'a>, VTableStruct<'a>>,
     pub num_structs: StructIndex,
 }
 
-impl VTable {
+impl<'a> VTable<'a> {
     pub fn new() -> Self {
         Self {
             structs: HashMap::new(),
@@ -16,17 +16,15 @@ impl VTable {
         }
     }
 
-    pub fn add_struct(&mut self, vtable_struct: VTableStruct) {
+    pub fn add_struct(&mut self, vtable_struct: VTableStruct<'a>) {
         let mut vtable_struct = vtable_struct;
         vtable_struct.set_struct_index(self.num_structs);
-        self.structs.insert(
-            vtable_struct.struct_name_as_bytes.clone(),
-            vtable_struct.clone(),
-        );
+        self.structs
+            .insert(vtable_struct.struct_name_as_bytes, vtable_struct.clone());
         self.num_structs += 1;
     }
 
-    pub fn merge_vtable(&mut self, vtable: VTable) {
+    pub fn merge_vtable(&mut self, vtable: &'static VTable) {
         // Sort the vtable structs by struct name
         let mut vtable_structs = vtable.structs.values().collect::<Vec<&VTableStruct>>();
 
@@ -56,7 +54,7 @@ impl VTable {
     // Return the struct index from the struct name
     pub fn struct_by_name(&self, name: impl AsRef<[u8]>) -> Result<&VTableStruct, Error> {
         for vtable_struct in self.structs.values() {
-            if vtable_struct.struct_name_as_bytes == *name.as_ref() {
+            if vtable_struct.struct_name_as_bytes == name.as_ref() {
                 return Ok(vtable_struct);
             }
         }
