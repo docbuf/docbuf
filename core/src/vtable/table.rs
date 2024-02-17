@@ -124,7 +124,7 @@ impl<'a> VTable<'a> {
     }
 
     pub fn parse_raw_values(&self, input: &[u8]) -> Result<DocBufRawValues, Error> {
-        let mut current_item_index = 0;
+        let mut current_item_index = self.num_items;
         let mut current_field_index = 0;
 
         let mut data = DocBufRawValues::new();
@@ -142,9 +142,13 @@ impl<'a> VTable<'a> {
                     current_field_index += 1;
                 }
                 _ => {
+                    if current_item_index == 0 {
+                        break;
+                    }
+
                     // This will error when the item_index reaches the u8 max value (255)
                     // if there is an unhandled error and the input data is not read
-                    current_item_index += 1;
+                    current_item_index -= 1;
                     current_field_index = 0;
                 }
             }

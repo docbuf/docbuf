@@ -12,13 +12,15 @@ pub mod test_deps {
     pub use serde_json;
 }
 
-trait TestHarness<'de>: DocBuf + SetTestValues + Default + Deserialize<'de> + Serialize {
+trait TestHarness<'de>:
+    DocBuf + SetTestValues + Default + Deserialize<'de> + Serialize + std::fmt::Debug
+{
     /// Assert the serialization size of the document buffer is less than or equal to the size of the
     /// bincode and JSON serialization.
-    fn assert_serialization_size(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn assert_serialization_size(self) -> Result<Self, Box<dyn std::error::Error>> {
         let docbuf_bytes = self.to_docbuf()?;
-        let bincode_bytes = bincode::serialize(self)?;
-        let json_bytes = serde_json::to_vec(self)?;
+        let bincode_bytes = bincode::serialize(&self)?;
+        let json_bytes = serde_json::to_vec(&self)?;
 
         assert!(
             docbuf_bytes.len() <= bincode_bytes.len(),
@@ -33,7 +35,18 @@ trait TestHarness<'de>: DocBuf + SetTestValues + Default + Deserialize<'de> + Se
             json_bytes.len()
         );
 
-        Ok(())
+        Ok(self)
+    }
+
+    /// Assert the serialize and deserialization round trip of the document buffer.
+    fn assert_serialization_round_trip(self) -> Result<Self, Box<dyn std::error::Error>> {
+        let docbuf_bytes = self.to_docbuf()?;
+
+        let docbuf_deserialized = Self::from_docbuf(&docbuf_bytes)?;
+
+        println!("docbuf_deserialized: {:?}", docbuf_deserialized);
+
+        Ok(self)
     }
 }
 

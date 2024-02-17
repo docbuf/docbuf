@@ -95,13 +95,15 @@ impl<'de> TestHarness<'de> for Document {}
 fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
     let document = Document::dummy();
 
-    println!("document: {:?}", document);
-
     // let mut hasher = sha2::Sha256::default();
     // let hash = document.hash(&mut hasher)?;
     // println!("hash: {:?}", hash);
 
     document
+        // Round Trip Test
+        .assert_serialization_round_trip()
+        .expect("Failed round trip serialization")
+        // Serialization Size Comparison Test
         .assert_serialization_size()
         .expect("Failed encoding benchmark");
 

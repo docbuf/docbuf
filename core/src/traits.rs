@@ -13,7 +13,7 @@ pub trait DocBuf {
     type Doc;
 
     // Document buffer struct with additional fields for options and validation
-    type DocBuf: DocBuf;
+    type DocBuf: DocBuf + std::fmt::Debug;
 
     /// Consumes the document buffer and returns the inner document type
     fn to_doc(self) -> Self::Doc;

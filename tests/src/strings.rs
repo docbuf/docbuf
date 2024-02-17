@@ -15,10 +15,7 @@ fn run_test_cases<'de, D: TestHarness<'de>>(
 
         match expected {
             true => {
-                let docbuf_bytes = doc.to_docbuf()?;
-                D::from_docbuf(&docbuf_bytes)?;
-
-                doc.assert_serialization_size()?;
+                doc = doc.assert_serialization_size()?;
             }
             false => {
                 assert!(doc.to_docbuf().is_err());
