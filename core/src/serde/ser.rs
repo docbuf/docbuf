@@ -6,7 +6,7 @@ use crate::{error::Error, traits::DocBuf, Result};
 pub struct DocBufSerializer {
     pub vtable: &'static VTable<'static>,
     pub output: Vec<u8>,
-    pub current_struct_index: u8,
+    pub current_item_index: u8,
     pub current_field_index: u8,
 }
 
@@ -15,15 +15,15 @@ impl DocBufSerializer {
         Self {
             vtable,
             output: Vec::new(),
-            current_struct_index: 0,
+            current_item_index: 0,
             current_field_index: 0,
         }
     }
 
-    // Encode the data into the data map
-    pub fn encode_data(&mut self, data: impl AsRef<[u8]>) -> Result<()> {
+    // Encode the data into the output vector
+    pub fn encode(&mut self, data: impl AsRef<[u8]>) -> Result<()> {
         self.vtable
-            .struct_by_index(&self.current_struct_index)?
+            .struct_by_index(self.current_item_index)?
             .field_by_index(&self.current_field_index)?
             .encode(data.as_ref(), &mut self.output)?;
 
@@ -55,27 +55,22 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
-    fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self> {
-        // Check the vtable for the entry
-        if let Some(entry) = self.vtable.structs.get(name.as_bytes()) {
-            // Set current index
-            self.current_struct_index = entry.struct_index;
-
-            // Check if entry fields match the length of the fields from the serializer
-            if entry.num_fields != len as u8 {
-                return Err(Error::Serde(format!(
-                    "Number of fields in struct {} does not match the vtable",
-                    name
-                )));
+    fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self> {
+        for vtable_item in self.vtable.items.iter() {
+            match vtable_item {
+                VTableItem::Struct(vtable_struct) => {
+                    if vtable_struct.struct_name_as_bytes == name.as_bytes() {
+                        self.current_item_index = vtable_struct.item_index;
+                        return Ok(self);
+                    }
+                } // _ => {}
             }
-        } else {
-            return Err(Error::Serde(format!(
-                "Struct {} not found in the vtable",
-                name
-            )));
         }
 
-        Ok(self)
+        Err(Error::Serde(format!(
+            "Struct {} not found in the vtable",
+            name
+        )))
     }
 
     fn serialize_bool(self, _v: bool) -> Result<Self::Ok> {
@@ -119,19 +114,19 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        self.encode_data(v.as_bytes())?;
+        self.encode(v.as_bytes())?;
 
         Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
-        self.encode_data(v.to_le_bytes())?;
+        self.encode(v.to_le_bytes())?;
 
         Ok(())
     }
 
     fn serialize_u16(self, v: u16) -> Result<Self::Ok> {
-        self.encode_data(v.to_le_bytes())?;
+        self.encode(v.to_le_bytes())?;
 
         Ok(())
     }
@@ -332,14 +327,14 @@ impl<'a> serde::ser::SerializeStruct for &'a mut DocBufSerializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> Result<()>
+    fn serialize_field<T: ?Sized>(&mut self, name: &'static str, value: &T) -> Result<()>
     where
         T: Serialize,
     {
         self.current_field_index = self
             .vtable
-            .struct_by_index(&self.current_struct_index)?
-            .field_index_from_name(key)?;
+            .struct_by_index(self.current_item_index)?
+            .field_index_from_name(name)?;
 
         value.serialize(&mut **self)?;
 

@@ -1,5 +1,5 @@
 use criterion::{black_box, BenchmarkId, Criterion};
-use docbuf_core::traits::DocBuf;
+use docbuf_core::{serde::ser::DocBufSerializer, traits::DocBuf};
 use docbuf_tests::{complex, test_deps::*, unsigned_integers::*};
 
 // Benchmark the serialization of a complex document.
@@ -86,4 +86,14 @@ pub fn benchmark_unsigned_integers(c: &mut Criterion) {
     );
 
     group.finish();
+}
+
+pub fn benchmark_docbuf_serializer(c: &mut Criterion) {
+    let vtable = complex::Document::vtable().expect("Failed to create vtable");
+
+    c.bench_with_input(
+        BenchmarkId::new("benchmark_docbuf_serializer", vtable),
+        &vtable,
+        |b, v| b.iter(|| black_box(DocBufSerializer::new(v))),
+    );
 }

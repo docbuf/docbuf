@@ -192,13 +192,22 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                     // Lookup the vtable for the struct
                     let #table_name_var = #ty::vtable().expect("Failed to lookup vtable for struct");
 
-                    if let Some(#struct_name_var) = #table_name_var.structs.get(stringify!(#ty).as_bytes()) {
-                        let field_type = ::docbuf_core::vtable::FieldType::Struct(#struct_name_var.clone().struct_name_as_bytes);
+                    for vtable_item in #table_name_var.items.iter() {
+                        match vtable_item {
+                            ::docbuf_core::vtable::VTableItem::Struct(#struct_name_var) => {
+                                let name = #struct_name_var.struct_name_as_bytes.clone();
+                                if name == stringify!(#ty).as_bytes() {
+                                    let field_type = ::docbuf_core::vtable::FieldType::Struct(name);
 
-                        // Add the field rules to the vtable field
-                        #rules
-
-                        vtable_struct.add_field(field_type, stringify!(#name), field_rules);
+                                    // Add the field rules to the vtable field
+                                    #rules
+                                    vtable_struct.add_field(field_type, stringify!(#name), field_rules);
+                                }
+                            }
+                            _ => {
+                                unimplemented!("Unimeplemented vtable item type");
+                            }
+                        }
                     }
 
                     // Merge the vtable with the input vtable
@@ -213,7 +222,6 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                 quote! {
                     // Add the field rules to the vtable field
                     #rules
-                    // let field_rules = ::docbuf_core::vtable::FieldRules::new();
 
                     vtable_struct.add_field(stringify!(#ty), stringify!(#name), field_rules);
                 }
@@ -226,12 +234,20 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
             static VTABLE: ::std::sync::OnceLock<::docbuf_core::vtable::VTable> = ::std::sync::OnceLock::new();
 
             Ok(VTABLE.get_or_init(|| {
-                let mut vtable =  ::docbuf_core::vtable::VTable::new();
+                let mut vtable = ::docbuf_core::vtable::VTable::new();
 
                 let mut vtable_struct = ::docbuf_core::vtable::VTableStruct::new(stringify!(#name), None);
 
                 // Add the fields to the vtable
                 #(#fields)*
+
+                // Sorting is required to ensure the structs are added in a consistent order
+                vtable.items.inner_mut().sort_by(|a, b| match (a, b) {
+                    (::docbuf_core::vtable::VTableItem::Struct(a), ::docbuf_core::vtable::VTableItem::Struct(b)) => a.struct_name_as_bytes
+                        .cmp(&b.struct_name_as_bytes)
+                        .then(a.item_index.cmp(&b.item_index)),
+                    _ => std::cmp::Ordering::Equal,
+                });
 
                 // Create a vtable_struct for the input struct
                 vtable.add_struct(vtable_struct);

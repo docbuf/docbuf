@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use super::*;
 
-pub type StructIndex = u8;
+// pub type StructIndex = u8;
 pub type StructNameAsBytes<'a> = &'a [u8];
 
 #[derive(Debug, Clone)]
 pub struct VTableStruct<'a> {
-    pub struct_index: StructIndex,
+    pub item_index: VTableItemIndex,
     pub struct_name_as_bytes: StructNameAsBytes<'a>,
     pub fields: HashMap<FieldNameAsBytes<'a>, VTableField<'a>>,
     pub num_fields: FieldIndex,
@@ -16,7 +16,7 @@ pub struct VTableStruct<'a> {
 impl<'a> VTableStruct<'a> {
     pub fn new(struct_name: &'a str, index: Option<u8>) -> Self {
         Self {
-            struct_index: index.unwrap_or_default(),
+            item_index: index.unwrap_or_default(),
             struct_name_as_bytes: struct_name.as_bytes(),
             fields: HashMap::new(),
             num_fields: 0,
@@ -32,7 +32,7 @@ impl<'a> VTableStruct<'a> {
         let field_index = self.num_fields;
 
         let field = VTableField::new(
-            self.struct_index,
+            self.item_index,
             field_type.into(),
             field_index,
             field_name,
@@ -42,11 +42,11 @@ impl<'a> VTableStruct<'a> {
         self.num_fields += 1;
     }
 
-    pub fn set_struct_index(&mut self, index: StructIndex) {
-        self.struct_index = index;
+    pub fn set_item_index(&mut self, index: VTableItemIndex) {
+        self.item_index = index;
 
         for field in self.fields.values_mut() {
-            field.struct_index = self.struct_index;
+            field.item_index = self.item_index;
         }
     }
 

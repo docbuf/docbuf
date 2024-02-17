@@ -8,7 +8,7 @@ use crate::{error::Error, traits::DocBuf, Result};
 pub struct DocBufDeserializer {
     vtable: &'static VTable<'static>,
     raw_values: DocBufRawValues,
-    current_struct_index: StructIndex,
+    current_item_index: VTableItemIndex,
     current_field_index: FieldIndex,
 }
 
@@ -20,7 +20,7 @@ impl<'de> DocBufDeserializer {
         Ok(DocBufDeserializer {
             vtable,
             raw_values,
-            current_struct_index: 0,
+            current_item_index: 0,
             current_field_index: 0,
         })
     }
@@ -59,7 +59,7 @@ impl<'de> serde::de::MapAccess<'de> for &mut DocBufDeserializer {
     {
         let field_data = self
             .raw_values
-            .get(self.current_struct_index, self.current_field_index);
+            .get(self.current_item_index, self.current_field_index);
 
         if field_data.is_none() {
             // Field cannot be found for current struct and field indexes
@@ -74,7 +74,7 @@ impl<'de> serde::de::MapAccess<'de> for &mut DocBufDeserializer {
         V: DeserializeSeed<'de>,
     {
         self.raw_values
-            .remove(self.current_struct_index, self.current_field_index)
+            .remove(self.current_item_index, self.current_field_index)
             .unwrap_or_default();
 
         seed.deserialize(&mut **self)
@@ -143,7 +143,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     {
         let field_data = self
             .raw_values
-            .remove(self.current_struct_index, self.current_field_index)
+            .remove(self.current_item_index, self.current_field_index)
             .unwrap_or_default();
 
         let value = u8::from_le_bytes([field_data[0]]);
@@ -160,7 +160,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     {
         let field_data = self
             .raw_values
-            .remove(self.current_struct_index, self.current_field_index)
+            .remove(self.current_item_index, self.current_field_index)
             .unwrap_or_default();
 
         let value = u16::from_le_bytes([field_data[0], field_data[1]]);
@@ -212,7 +212,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     {
         let field_data = self
             .raw_values
-            .remove(self.current_struct_index, self.current_field_index)
+            .remove(self.current_item_index, self.current_field_index)
             .unwrap_or_default();
 
         let value = std::str::from_utf8(&field_data)?;
@@ -229,7 +229,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     {
         let field_data = self
             .raw_values
-            .remove(self.current_struct_index, self.current_field_index)
+            .remove(self.current_item_index, self.current_field_index)
             .unwrap_or_default();
 
         let value = std::str::from_utf8(&field_data)?;
@@ -329,7 +329,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
         let current_struct = self.vtable.struct_by_name(name)?;
 
         // Set the current struct index;
-        self.current_struct_index = current_struct.struct_index;
+        self.current_item_index = current_struct.item_index;
         // Reset the current field index
         self.current_field_index = 0;
 

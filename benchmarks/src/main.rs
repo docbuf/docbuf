@@ -12,9 +12,11 @@ criterion_group!(
     vtable::benchmark_complex_vtable,
     vtable::benchmark_new_vtable,
     vtable::benchmark_le_bytes,
+    vtable::benchmark_vtable_struct_lookup,
     // Serialization Benchmarks
+    serialization::benchmark_docbuf_serializer,
     serialization::benchmark_complex_serialization,
-    serialization::benchmark_unsigned_integers
+    serialization::benchmark_unsigned_integers,
 );
 
 criterion_main!(docbuf_benchmarks);

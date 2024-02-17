@@ -12,3 +12,6 @@ harness = false
 docbuf-core = { path = "../core" }
 docbuf-tests = { path = "../tests" }
 criterion = "0.5.1"
+
+[profile.bench]
+debug = true

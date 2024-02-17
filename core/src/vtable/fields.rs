@@ -51,8 +51,8 @@ pub type FieldNameAsBytes<'a> = &'a [u8];
 
 #[derive(Debug, Clone)]
 pub struct VTableField<'a> {
-    // The index of the struct this field belongs to
-    pub struct_index: StructIndex,
+    // The index of the vtable item this field belongs to
+    pub item_index: VTableItemIndex,
     // The type of the field
     pub field_type: FieldType<'a>,
     pub field_index: FieldIndex,
@@ -62,7 +62,7 @@ pub struct VTableField<'a> {
 
 impl<'a> VTableField<'a> {
     pub fn new(
-        struct_index: StructIndex,
+        item_index: VTableItemIndex,
         field_type: FieldType<'a>,
         field_index: FieldIndex,
         field_name: &'a str,
@@ -71,7 +71,7 @@ impl<'a> VTableField<'a> {
         // println!("Field Rules: {:?}", field_rules);
 
         Self {
-            struct_index,
+            item_index,
             field_type,
             field_index,
             field_name_as_bytes: field_name.as_bytes(),
@@ -81,9 +81,8 @@ impl<'a> VTableField<'a> {
 
     pub fn encode(&self, field_data: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
         // Ensure the field data corresponds to the field rules
+        #[cfg(feature = "validate")]
         self.validate(field_data)?;
-
-        // let mut encoded = Vec::with_capacity(field_data.len());
 
         match self.field_type {
             FieldType::String => {

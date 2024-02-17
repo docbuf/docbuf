@@ -2,3 +2,4 @@
 .zed
 /target
 /guide/book
+**/flamegraph.svg
