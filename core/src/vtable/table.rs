@@ -76,7 +76,6 @@ impl<'a> VTable<'a> {
                 VTableItem::Struct(vtable_struct) => {
                     self.add_struct(vtable_struct.to_owned());
                 }
-                _ => {}
             }
         }
     }
@@ -90,7 +89,6 @@ impl<'a> VTable<'a> {
                         return Ok(vtable_struct);
                     }
                 }
-                _ => {}
             }
         }
 
@@ -106,7 +104,6 @@ impl<'a> VTable<'a> {
                         return Ok(vtable_struct);
                     }
                 }
-                _ => {}
             }
         }
 
@@ -143,11 +140,12 @@ impl<'a> VTable<'a> {
                 }
                 _ => {
                     if current_item_index == 0 {
-                        break;
+                        // If we've reached the end of the items
+                        // and the data is not empty, we must
+                        // return an error.
+                        return Err(Error::FailedToParseData);
                     }
 
-                    // This will error when the item_index reaches the u8 max value (255)
-                    // if there is an unhandled error and the input data is not read
                     current_item_index -= 1;
                     current_field_index = 0;
                 }

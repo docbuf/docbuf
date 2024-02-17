@@ -89,13 +89,13 @@ impl<'a> VTableField<'a> {
                 let data_length = FieldRules::le_bytes_data_length(field_data.len());
 
                 // Add the length of the data
-                output.extend_from_slice(data_length.as_bytes());
+                output.append(&mut data_length.as_bytes().to_owned());
             }
             _ => {}
         }
 
         // Add the field data
-        output.extend_from_slice(&field_data);
+        output.append(&mut field_data.to_owned());
 
         Ok(())
     }

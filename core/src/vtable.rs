@@ -32,6 +32,8 @@ pub enum Error {
     FieldRulesValue(String),
     #[error("Unable to borrow mutable reference for vtable")]
     VTableBorrowMut,
+    #[error("Unable to parse encoded data")]
+    FailedToParseData,
 }
 
 #[cfg(test)]

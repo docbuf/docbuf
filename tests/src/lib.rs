@@ -42,9 +42,7 @@ trait TestHarness<'de>:
     fn assert_serialization_round_trip(self) -> Result<Self, Box<dyn std::error::Error>> {
         let docbuf_bytes = self.to_docbuf()?;
 
-        let docbuf_deserialized = Self::from_docbuf(&docbuf_bytes)?;
-
-        println!("docbuf_deserialized: {:?}", docbuf_deserialized);
+        Self::from_docbuf(&docbuf_bytes)?;
 
         Ok(self)
     }
