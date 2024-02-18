@@ -1,15 +1,12 @@
-use std::collections::HashMap;
-
 use super::*;
 
-// pub type StructIndex = u8;
-pub type StructNameAsBytes<'a> = &'a [u8];
+pub type StructName<'a> = &'a str;
 
 #[derive(Debug, Clone)]
 pub struct VTableStruct<'a> {
     pub item_index: VTableItemIndex,
-    pub struct_name_as_bytes: StructNameAsBytes<'a>,
-    pub fields: HashMap<FieldNameAsBytes<'a>, VTableField<'a>>,
+    pub struct_name: StructName<'a>,
+    pub fields: VTableFields<'a>,
     pub num_fields: FieldIndex,
 }
 
@@ -17,8 +14,8 @@ impl<'a> VTableStruct<'a> {
     pub fn new(struct_name: &'a str, index: Option<u8>) -> Self {
         Self {
             item_index: index.unwrap_or_default(),
-            struct_name_as_bytes: struct_name.as_bytes(),
-            fields: HashMap::new(),
+            struct_name,
+            fields: VTableFields::new(),
             num_fields: 0,
         }
     }
@@ -38,43 +35,33 @@ impl<'a> VTableStruct<'a> {
             field_name,
             field_rules,
         );
-        self.fields.insert(field.clone().field_name_as_bytes, field);
+        self.fields.add_field(field);
         self.num_fields += 1;
     }
 
     pub fn set_item_index(&mut self, index: VTableItemIndex) {
         self.item_index = index;
 
-        for field in self.fields.values_mut() {
+        for field in self.fields.inner_mut() {
             field.item_index = self.item_index;
         }
     }
 
     // Return the field index from the struct
     pub fn field_index_from_name(&self, name: &str) -> Result<FieldIndex, Error> {
-        for field in self.fields.values() {
-            if field.field_name_as_bytes == name.as_bytes() {
-                return Ok(field.field_index);
-            }
-        }
-
-        Err(Error::FieldNotFound)
+        Ok(self.field_by_name(name)?.field_index)
     }
 
     // Return the field by name from the struct
-    pub fn field_by_name(&self, name: impl AsRef<[u8]>) -> Result<&VTableField, Error> {
-        for field in self.fields.values() {
-            if field.field_name_as_bytes == name.as_ref() {
-                return Ok(field);
-            }
-        }
-
-        Err(Error::FieldNotFound)
+    pub fn field_by_name(&self, name: &str) -> Result<&VTableField, Error> {
+        self.fields
+            .find_field_by_name(name)
+            .ok_or(Error::FieldNotFound)
     }
 
     // Return the field by index from the struct
     pub fn field_by_index(&self, index: &FieldIndex) -> Result<&VTableField, Error> {
-        for field in self.fields.values() {
+        for field in self.fields.iter() {
             if field.field_index == *index {
                 return Ok(field);
             }
@@ -85,10 +72,5 @@ impl<'a> VTableStruct<'a> {
 
     pub fn field_rules_by_index(&self, index: &FieldIndex) -> Result<&FieldRules, Error> {
         self.field_by_index(index).map(|field| &field.field_rules)
-    }
-
-    pub fn struct_name_as_string(&self) -> Result<String, Error> {
-        let name = String::from_utf8(self.struct_name_as_bytes.to_vec())?;
-        Ok(name)
     }
 }

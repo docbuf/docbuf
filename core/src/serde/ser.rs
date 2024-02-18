@@ -3,46 +3,91 @@ use serde::Serialize;
 use crate::vtable::*;
 use crate::{error::Error, traits::DocBuf, Result};
 
-pub struct DocBufSerializer {
+// pub enum Output {
+//     Static(&'static mut Vec<u8>),
+//     Dynamic(Vec<u8>),
+// }
+
+// impl Output {
+//     pub fn as_mut(&mut self) -> &mut Vec<u8> {
+//         match self {
+//             Output::Static(buf) => *buf,
+//             Output::Dynamic(buf) => buf,
+//         }
+//     }
+
+//     pub fn to_vec(self) -> Vec<u8> {
+//         match self {
+//             Output::Static(buf) => buf.to_vec(),
+//             Output::Dynamic(buf) => buf,
+//         }
+//     }
+// }
+
+pub struct DocBufSerializer<'a> {
     pub vtable: &'static VTable<'static>,
-    pub output: Vec<u8>,
+    pub output: &'a mut Vec<u8>,
     pub current_item_index: u8,
     pub current_field_index: u8,
+    pub current_item: Option<&'static VTableItem<'static>>,
+    pub current_field: Option<&'static VTableField<'static>>,
 }
 
-impl DocBufSerializer {
-    pub fn new(vtable: &'static VTable) -> Self {
+impl<'a> DocBufSerializer<'a> {
+    pub fn new(vtable: &'static VTable, output: &'a mut Vec<u8>) -> Self {
+        // Clear the output buffer
+        output.clear();
+
         Self {
             vtable,
-            output: Vec::new(),
+            output,
             current_item_index: 0,
             current_field_index: 0,
+            current_item: None,
+            current_field: None,
         }
     }
 
     // Encode the data into the output vector
     pub fn encode(&mut self, data: impl AsRef<[u8]>) -> Result<()> {
-        self.vtable
-            .struct_by_index(self.current_item_index)?
-            .field_by_index(&self.current_field_index)?
-            .encode(data.as_ref(), &mut self.output)?;
+        let field = match self.current_field {
+            Some(field) => field,
+            _ => self
+                .vtable
+                .struct_by_index(self.current_item_index)?
+                .field_by_index(&self.current_field_index)?,
+        };
+
+        field.encode(data.as_ref(), &mut self.output)?;
 
         Ok(())
     }
 }
 
-pub fn to_docbuf<T>(value: &T) -> Result<Vec<u8>>
+pub fn to_docbuf_writer<T>(value: &T, buffer: &mut Vec<u8>) -> Result<()>
 where
     T: Serialize + DocBuf + std::fmt::Debug,
 {
-    let mut serializer = DocBufSerializer::new(T::vtable()?);
+    let mut serializer = DocBufSerializer::new(T::vtable()?, buffer);
 
     value.serialize(&mut serializer)?;
 
-    Ok(serializer.output)
+    Ok(())
 }
 
-impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
+// pub fn to_docbuf<T>(value: &T) -> Result<Vec<u8>>
+// where
+//     T: Serialize + DocBuf + std::fmt::Debug,
+// {
+//     let mut serializer =
+//         DocBufSerializer::new(T::vtable()?, Output::Dynamic(Vec::with_capacity(1024)));
+
+//     value.serialize(&mut serializer)?;
+
+//     Ok(serializer.output.to_vec())
+// }
+
+impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     type Ok = ();
 
     type Error = Error;
@@ -59,8 +104,9 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
         for vtable_item in self.vtable.items.iter() {
             match vtable_item {
                 VTableItem::Struct(vtable_struct) => {
-                    if vtable_struct.struct_name_as_bytes == name.as_bytes() {
+                    if vtable_struct.struct_name == name {
                         self.current_item_index = vtable_struct.item_index;
+                        self.current_item = Some(vtable_item);
                         return Ok(self);
                     }
                 } // _ => {}
@@ -114,9 +160,7 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        self.encode(v.as_bytes())?;
-
-        Ok(())
+        self.encode(v.as_bytes())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
@@ -236,7 +280,7 @@ impl<'a> serde::ser::Serializer for &'a mut DocBufSerializer {
     }
 }
 
-impl<'a> serde::ser::SerializeSeq for &'a mut DocBufSerializer {
+impl<'a, 'b> serde::ser::SerializeSeq for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
@@ -252,7 +296,7 @@ impl<'a> serde::ser::SerializeSeq for &'a mut DocBufSerializer {
     }
 }
 
-impl<'a> serde::ser::SerializeTuple for &'a mut DocBufSerializer {
+impl<'a, 'b> serde::ser::SerializeTuple for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
@@ -268,7 +312,7 @@ impl<'a> serde::ser::SerializeTuple for &'a mut DocBufSerializer {
     }
 }
 
-impl<'a> serde::ser::SerializeTupleStruct for &'a mut DocBufSerializer {
+impl<'a, 'b> serde::ser::SerializeTupleStruct for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
@@ -284,7 +328,7 @@ impl<'a> serde::ser::SerializeTupleStruct for &'a mut DocBufSerializer {
     }
 }
 
-impl<'a> serde::ser::SerializeTupleVariant for &'a mut DocBufSerializer {
+impl<'a, 'b> serde::ser::SerializeTupleVariant for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
@@ -300,7 +344,7 @@ impl<'a> serde::ser::SerializeTupleVariant for &'a mut DocBufSerializer {
     }
 }
 
-impl<'a> serde::ser::SerializeMap for &'a mut DocBufSerializer {
+impl<'a, 'b> serde::ser::SerializeMap for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
@@ -323,7 +367,7 @@ impl<'a> serde::ser::SerializeMap for &'a mut DocBufSerializer {
     }
 }
 
-impl<'a> serde::ser::SerializeStruct for &'a mut DocBufSerializer {
+impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
@@ -331,10 +375,16 @@ impl<'a> serde::ser::SerializeStruct for &'a mut DocBufSerializer {
     where
         T: Serialize,
     {
-        self.current_field_index = self
-            .vtable
-            .struct_by_index(self.current_item_index)?
-            .field_index_from_name(name)?;
+        let field = match self.current_item {
+            Some(VTableItem::Struct(field_struct)) => field_struct.field_by_name(name)?,
+            _ => self
+                .vtable
+                .struct_by_index(self.current_item_index)?
+                .field_by_name(name)?,
+        };
+
+        self.current_field_index = field.field_index;
+        self.current_field = Some(field);
 
         value.serialize(&mut **self)?;
 
@@ -347,7 +397,7 @@ impl<'a> serde::ser::SerializeStruct for &'a mut DocBufSerializer {
     }
 }
 
-impl<'a> serde::ser::SerializeStructVariant for &'a mut DocBufSerializer {
+impl<'a, 'b> serde::ser::SerializeStructVariant for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 

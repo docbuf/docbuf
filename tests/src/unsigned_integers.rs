@@ -36,17 +36,19 @@ fn run_test_cases<'de, D: TestHarness<'de>>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut doc = D::default();
 
+    let mut buffer = Vec::with_capacity(1024);
+
     for (expected, value) in test_cases {
         value.set_doc_value(&mut doc);
 
         match expected {
             true => {
                 // Test serialization size
-                doc = doc.assert_serialization_size()?;
+                doc = doc.assert_serialization_size(&mut buffer)?;
             }
             false => {
                 assert!(
-                    doc.to_docbuf().is_err(),
+                    doc.to_docbuf(&mut buffer).is_err(),
                     "Expected `{:?}` to be `{expected}`",
                     value
                 );

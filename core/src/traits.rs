@@ -25,7 +25,7 @@ pub trait DocBuf {
     fn from_doc(doc: Self::Doc) -> Self;
 
     /// Convert the document to a document buffer
-    fn to_docbuf(&self) -> Result<Vec<u8>, error::Error>;
+    fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<(), error::Error>;
 
     /// Convert the document buffer to a document
     fn from_docbuf(buf: &[u8]) -> Result<Self::DocBuf, error::Error>;
@@ -76,7 +76,8 @@ pub trait DocBufCrypto: DocBuf {
     {
         // Hash the document buffer contents
         use digest::DynDigest;
-        let bytes = self.to_docbuf()?;
+        let mut bytes = Vec::with_capacity(1024);
+        self.to_docbuf(&mut bytes)?;
 
         let output_size = digest.output_size();
         let mut result = vec![0u8; output_size];

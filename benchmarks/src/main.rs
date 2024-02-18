@@ -14,7 +14,7 @@ criterion_group!(
     vtable::benchmark_le_bytes,
     vtable::benchmark_vtable_struct_lookup,
     // Serialization Benchmarks
-    serialization::benchmark_docbuf_serializer,
+    // serialization::benchmark_docbuf_serializer,
     serialization::benchmark_complex_serialization,
     serialization::benchmark_unsigned_integers,
 );

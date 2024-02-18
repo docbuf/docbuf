@@ -13,7 +13,7 @@ pub struct VTableItems<'a>(pub Vec<VTableItem<'a>>);
 
 impl<'a> VTableItems<'a> {
     pub fn new() -> Self {
-        Self(Vec::new())
+        Self(Vec::with_capacity(256))
     }
 
     pub fn add_struct(&mut self, vtable_struct: VTableStruct<'a>) {
@@ -57,7 +57,6 @@ impl std::fmt::Display for VTable<'_> {
 impl<'a> VTable<'a> {
     pub fn new() -> Self {
         Self {
-            // structs: HashMap::new(),
             items: VTableItems::new(),
             num_items: 0,
         }
@@ -96,11 +95,11 @@ impl<'a> VTable<'a> {
     }
 
     // Return the struct index from the struct name
-    pub fn struct_by_name(&self, name: impl AsRef<[u8]>) -> Result<&VTableStruct, Error> {
+    pub fn struct_by_name(&self, name: &str) -> Result<&VTableStruct, Error> {
         for vtable_item in self.items.iter() {
             match vtable_item {
                 VTableItem::Struct(vtable_struct) => {
-                    if vtable_struct.struct_name_as_bytes == name.as_ref() {
+                    if vtable_struct.struct_name == name {
                         return Ok(vtable_struct);
                     }
                 }

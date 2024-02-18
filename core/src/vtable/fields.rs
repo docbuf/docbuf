@@ -47,7 +47,8 @@ impl LeBytes {
 }
 
 pub type FieldIndex = u8;
-pub type FieldNameAsBytes<'a> = &'a [u8];
+// pub type FieldNameAsBytes<'a> = &'a [u8];
+pub type FieldName<'a> = &'a str;
 
 #[derive(Debug, Clone)]
 pub struct VTableField<'a> {
@@ -56,7 +57,7 @@ pub struct VTableField<'a> {
     // The type of the field
     pub field_type: FieldType<'a>,
     pub field_index: FieldIndex,
-    pub field_name_as_bytes: FieldNameAsBytes<'a>,
+    pub field_name: FieldName<'a>,
     pub field_rules: FieldRules,
 }
 
@@ -65,7 +66,7 @@ impl<'a> VTableField<'a> {
         item_index: VTableItemIndex,
         field_type: FieldType<'a>,
         field_index: FieldIndex,
-        field_name: &'a str,
+        field_name: FieldName<'a>,
         field_rules: FieldRules,
     ) -> Self {
         // println!("Field Rules: {:?}", field_rules);
@@ -74,7 +75,7 @@ impl<'a> VTableField<'a> {
             item_index,
             field_type,
             field_index,
-            field_name_as_bytes: field_name.as_bytes(),
+            field_name,
             field_rules,
         }
     }
@@ -86,16 +87,16 @@ impl<'a> VTableField<'a> {
 
         match self.field_type {
             FieldType::String => {
-                let data_length = FieldRules::le_bytes_data_length(field_data.len());
+                // prepend length to the field data
+                let length = FieldRules::le_bytes_data_length(field_data.len());
 
-                // Add the length of the data
-                output.append(&mut data_length.as_bytes().to_owned());
+                output.extend_from_slice(length.as_bytes());
             }
             _ => {}
-        }
+        };
 
         // Add the field data
-        output.append(&mut field_data.to_owned());
+        output.extend_from_slice(&field_data);
 
         Ok(())
     }
@@ -150,12 +151,12 @@ impl<'a> VTableField<'a> {
         (encoded_length, u32::from_le_bytes(field_length) as usize)
     }
 
-    pub fn field_name_as_string(&self) -> Result<String, Error> {
-        let name = String::from_utf8(self.field_name_as_bytes.to_vec())?;
-        Ok(name)
-    }
-
     pub fn validate(&self, data: &[u8]) -> Result<(), Error> {
+        // Skip validation if no field rules are present
+        if self.field_rules.is_none() {
+            return Ok(());
+        }
+
         match self.field_type {
             FieldType::String => {
                 // Check for string length rules
@@ -186,6 +187,44 @@ impl<'a> VTableField<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct VTableFields<'a>(pub Vec<VTableField<'a>>);
+
+impl<'a> VTableFields<'a> {
+    pub fn new() -> Self {
+        Self(Vec::with_capacity(256))
+    }
+
+    // Add a field to the vtable fields
+    pub fn add_field(&mut self, field: VTableField<'a>) {
+        self.0.push(field);
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, VTableField<'a>> {
+        self.0.iter()
+    }
+
+    // Inner values
+    pub fn inner(&self) -> &Vec<VTableField<'a>> {
+        &self.0
+    }
+
+    // Inner values mutable
+    pub fn inner_mut(&mut self) -> &mut Vec<VTableField<'a>> {
+        &mut self.0
+    }
+
+    // Returns the length of items
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Find a field by its name
+    pub fn find_field_by_name(&self, field_name: &str) -> Option<&VTableField<'a>> {
+        self.0.iter().find(|field| field.field_name == field_name)
+    }
+}
+
 /// Optional rules for a field
 #[derive(Debug, Clone)]
 pub struct FieldRules {
@@ -213,6 +252,19 @@ impl FieldRules {
             regex: None,
             sign: false,
         }
+    }
+
+    // Check whether the field rules are empty
+    // Usefule for optimization in validation checking
+    pub fn is_none(&self) -> bool {
+        !self.ignore
+            && self.max_value.is_none()
+            && self.min_value.is_none()
+            && self.max_length.is_none()
+            && self.min_length.is_none()
+            && self.length.is_none()
+            && self.regex.is_none()
+            && !self.sign
     }
 
     pub fn set_max_length(mut self, max_length: usize) -> Self {
@@ -294,21 +346,22 @@ impl FieldRules {
                 let msg = format!("data size does not match required length: {length}");
                 return Err(Error::FieldRulesLength(msg));
             }
-        }
-
-        if let Some(max_length) = self.max_length {
-            if length > max_length {
-                let msg = format!("data size exceeds field max length: {max_length}");
-                return Err(Error::FieldRulesLength(msg));
+        } else {
+            // If exact length is not set, check the min and max length values.
+            if let Some(max_length) = self.max_length {
+                if length > max_length {
+                    let msg = format!("data size exceeds field max length: {max_length}");
+                    return Err(Error::FieldRulesLength(msg));
+                }
             }
-        }
 
-        if let Some(min_length) = self.min_length {
-            if length < min_length {
-                let msg = format!("data size is less than min length: {min_length}");
-                return Err(Error::FieldRulesLength(msg));
-            }
-        };
+            if let Some(min_length) = self.min_length {
+                if length < min_length {
+                    let msg = format!("data size is less than min length: {min_length}");
+                    return Err(Error::FieldRulesLength(msg));
+                }
+            };
+        }
 
         Ok(())
     }
@@ -388,7 +441,7 @@ pub enum FieldType<'a> {
     Vec,
     Bytes,
     Bool,
-    Struct(StructNameAsBytes<'a>),
+    Struct(StructName<'a>),
 }
 
 impl<'a> FieldType<'a> {
@@ -430,7 +483,7 @@ impl<'a> From<&'a str> for FieldType<'a> {
             "[u8]" => FieldType::Bytes,
             "Vec" => FieldType::Vec,
             "bool" => FieldType::Bool,
-            s => FieldType::Struct(s.as_bytes()),
+            s => FieldType::Struct(s),
         }
     }
 }
@@ -454,7 +507,7 @@ impl<'a> From<u8> for FieldType<'a> {
             13 => FieldType::Vec,
             14 => FieldType::Bytes,
             15 => FieldType::Bool,
-            16 => FieldType::Struct(&[]),
+            16 => FieldType::Struct(""),
             _ => todo!("Handle unknown field type"),
         }
     }

@@ -14,6 +14,8 @@ pub enum Error {
     /// UTF-8 Error
     #[error(transparent)]
     Utf8(#[from] std::str::Utf8Error),
+    #[error("Failed to create initial buffer allocation")]
+    FailedToCreateBuffer,
 }
 
 impl serde::ser::Error for Error {

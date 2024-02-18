@@ -10,15 +10,18 @@ fn run_test_cases<'de, D: TestHarness<'de>>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut doc = D::default();
 
+    // Create buffer to store serialized data
+    let mut buffer = Vec::with_capacity(1024);
+
     for (expected, value) in test_cases {
         doc.set_string_value(value.into());
 
         match expected {
             true => {
-                doc = doc.assert_serialization_size()?;
+                doc = doc.assert_serialization_size(&mut buffer)?;
             }
             false => {
-                assert!(doc.to_docbuf().is_err());
+                assert!(doc.to_docbuf(&mut buffer).is_err());
             }
         }
     }

@@ -1,11 +1,8 @@
-use docbuf_core::traits::DocBuf;
+use docbuf_core::traits::{DocBuf, DocBufCrypto};
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{SetTestValues, TestHarness};
-
-use docbuf_core::crypto::sha2;
-use docbuf_core::traits::DocBufCrypto;
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
@@ -45,16 +42,16 @@ pub struct Document {
     sign = true;
 }]
 pub struct Metadata {
-    // #[docbuf {
-    //     min_length = 0;
-    // }]
+    #[docbuf {
+        min_length = 0;
+    }]
     pub metadata: String,
     pub signature: Signature,
 }
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
-    sign = "true";
+    // sign = "true";
 }]
 pub struct Signature {
     #[docbuf {
@@ -95,16 +92,18 @@ impl<'de> TestHarness<'de> for Document {}
 fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
     let document = Document::dummy();
 
+    let mut buffer = Vec::with_capacity(1024);
+
     // let mut hasher = sha2::Sha256::default();
     // let hash = document.hash(&mut hasher)?;
     // println!("hash: {:?}", hash);
 
     document
         // Round Trip Test
-        .assert_serialization_round_trip()
+        .assert_serialization_round_trip(&mut buffer)
         .expect("Failed round trip serialization")
         // Serialization Size Comparison Test
-        .assert_serialization_size()
+        .assert_serialization_size(&mut buffer)
         .expect("Failed encoding benchmark");
 
     Ok(())

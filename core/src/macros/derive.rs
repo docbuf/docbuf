@@ -195,8 +195,8 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                     for vtable_item in #table_name_var.items.iter() {
                         match vtable_item {
                             ::docbuf_core::vtable::VTableItem::Struct(#struct_name_var) => {
-                                let name = #struct_name_var.struct_name_as_bytes.clone();
-                                if name == stringify!(#ty).as_bytes() {
+                                let name = #struct_name_var.struct_name;
+                                if name == stringify!(#ty) {
                                     let field_type = ::docbuf_core::vtable::FieldType::Struct(name);
 
                                     // Add the field rules to the vtable field
@@ -243,8 +243,8 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 
                 // Sorting is required to ensure the structs are added in a consistent order
                 vtable.items.inner_mut().sort_by(|a, b| match (a, b) {
-                    (::docbuf_core::vtable::VTableItem::Struct(a), ::docbuf_core::vtable::VTableItem::Struct(b)) => a.struct_name_as_bytes
-                        .cmp(&b.struct_name_as_bytes)
+                    (::docbuf_core::vtable::VTableItem::Struct(a), ::docbuf_core::vtable::VTableItem::Struct(b)) => a.struct_name
+                        .cmp(&b.struct_name)
                         .then(a.item_index.cmp(&b.item_index)),
                     _ => std::cmp::Ordering::Equal,
                 });
@@ -264,8 +264,10 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 pub fn docbuf_impl_serialization(_input: TokenStream) -> TokenStream {
     let output = quote! {
         // Serialize the struct to a byte buffer
-        fn to_docbuf(&self) -> Result<Vec<u8>, ::docbuf_core::error::Error> {
-            Ok(::docbuf_core::serde::ser::to_docbuf(self)?)
+        fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<(), ::docbuf_core::error::Error> {
+            ::docbuf_core::serde::ser::to_docbuf_writer(self, buffer)?;
+
+            Ok(())
         }
 
         // Deserialize the byte buffer to a struct
@@ -393,7 +395,7 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
                     #[cfg(feature = "regex")]
                     "regex" => {
                         quote! {
-                            field_rules.#key = ::docbuf_core::validate::regex::Regex::new(#value).ok();
+                            field_rules.#key = Some(::docbuf_core::validate::regex::Regex::new(#value)?);
                         }
                     }
                     _ => {

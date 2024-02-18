@@ -17,21 +17,24 @@ trait TestHarness<'de>:
 {
     /// Assert the serialization size of the document buffer is less than or equal to the size of the
     /// bincode and JSON serialization.
-    fn assert_serialization_size(self) -> Result<Self, Box<dyn std::error::Error>> {
-        let docbuf_bytes = self.to_docbuf()?;
+    fn assert_serialization_size<'a>(
+        self,
+        buffer: &'a mut Vec<u8>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        self.to_docbuf(buffer)?;
         let bincode_bytes = bincode::serialize(&self)?;
         let json_bytes = serde_json::to_vec(&self)?;
 
         assert!(
-            docbuf_bytes.len() <= bincode_bytes.len(),
+            buffer.len() <= bincode_bytes.len(),
             "docbuf byte length: {}\nbincode byte length: {}",
-            docbuf_bytes.len(),
+            buffer.len(),
             bincode_bytes.len()
         );
         assert!(
-            docbuf_bytes.len() <= json_bytes.len(),
+            buffer.len() <= json_bytes.len(),
             "docbuf byte length: {}\njson byte length: {}",
-            docbuf_bytes.len(),
+            buffer.len(),
             json_bytes.len()
         );
 
@@ -39,10 +42,13 @@ trait TestHarness<'de>:
     }
 
     /// Assert the serialize and deserialization round trip of the document buffer.
-    fn assert_serialization_round_trip(self) -> Result<Self, Box<dyn std::error::Error>> {
-        let docbuf_bytes = self.to_docbuf()?;
+    fn assert_serialization_round_trip<'a>(
+        self,
+        buffer: &'a mut Vec<u8>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        self.to_docbuf(buffer)?;
 
-        Self::from_docbuf(&docbuf_bytes)?;
+        Self::from_docbuf(buffer)?;
 
         Ok(self)
     }

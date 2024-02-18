@@ -9,8 +9,16 @@ pub fn benchmark_complex_serialization(c: &mut Criterion) {
     // Create an instance of a document
     let doc = complex::Document::dummy();
 
+    // Create a buffer to serialize document into
+    let mut buffer = Vec::with_capacity(1024);
+
     group.bench_with_input(BenchmarkId::new("DocBuf", doc.clone()), &doc, |b, doc| {
-        b.iter(|| black_box(doc.to_docbuf().expect("Failed to serialize docbuf")))
+        b.iter(|| {
+            black_box(
+                doc.to_docbuf(&mut buffer)
+                    .expect("Failed to serialize docbuf"),
+            )
+        })
     });
 
     group.bench_with_input(BenchmarkId::new("Bincode", doc.clone()), &doc, |b, doc| {
@@ -31,11 +39,20 @@ pub fn benchmark_unsigned_integers(c: &mut Criterion) {
     // Create an instance of a document
     let u8_value = U8Value { u8_value: u8::MAX };
 
+    // Create a buffer to serialize document into
+    let mut buffer = Vec::with_capacity(1024);
+
     group.bench_with_input(
         BenchmarkId::new("DocBuf", u8_value.clone()),
         &u8_value,
         |b, u8_value| {
-            b.iter(|| black_box(u8_value.to_docbuf().expect("Failed to serialize docbuf")))
+            b.iter(|| {
+                black_box(
+                    u8_value
+                        .to_docbuf(&mut buffer)
+                        .expect("Failed to serialize docbuf"),
+                )
+            })
         },
     );
 
@@ -63,7 +80,13 @@ pub fn benchmark_unsigned_integers(c: &mut Criterion) {
         BenchmarkId::new("DocBuf", u16_value.clone()),
         &u16_value,
         |b, u16_value| {
-            b.iter(|| black_box(u16_value.to_docbuf().expect("Failed to serialize docbuf")))
+            b.iter(|| {
+                black_box(
+                    u16_value
+                        .to_docbuf(&mut buffer)
+                        .expect("Failed to serialize docbuf"),
+                )
+            })
         },
     );
 
@@ -88,12 +111,13 @@ pub fn benchmark_unsigned_integers(c: &mut Criterion) {
     group.finish();
 }
 
-pub fn benchmark_docbuf_serializer(c: &mut Criterion) {
-    let vtable = complex::Document::vtable().expect("Failed to create vtable");
+// pub fn benchmark_docbuf_serializer(c: &mut Criterion) {
+//     let vtable = complex::Document::vtable().expect("Failed to create vtable");
+//     let mut buffer = Vec::with_capacity(1024);
 
-    c.bench_with_input(
-        BenchmarkId::new("benchmark_docbuf_serializer", vtable),
-        &vtable,
-        |b, v| b.iter(|| black_box(DocBufSerializer::new(v))),
-    );
-}
+//     c.bench_with_input(
+//         BenchmarkId::new("benchmark_docbuf_serializer", ""),
+//         &(vtable, &mut buffer),
+//         |b, (v, &mut buf)| b.iter(|| black_box(DocBufSerializer::new(v, &mut buf))),
+//     );
+// }
