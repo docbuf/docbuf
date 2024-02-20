@@ -30,6 +30,8 @@ pub enum Error {
     FieldRulesRegex(String),
     #[error("Field Rules Invalid Value: {0}")]
     FieldRulesValue(String),
+    #[error("Invalid field type for validation: {0}")]
+    InvalidValidationType(String),
     #[error("Unable to borrow mutable reference for vtable")]
     VTableBorrowMut,
     #[error("Unable to parse encoded data")]

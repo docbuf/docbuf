@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{cmp::Ordering, str::FromStr};
 
 pub use super::*;
 
@@ -80,10 +80,10 @@ impl<'a> VTableField<'a> {
         }
     }
 
-    pub fn encode(&self, field_data: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
+    pub fn encode_str(&self, field_data: &str, output: &mut Vec<u8>) -> Result<(), Error> {
         // Ensure the field data corresponds to the field rules
         #[cfg(feature = "validate")]
-        self.validate(field_data)?;
+        self.validate_str(field_data)?;
 
         match self.field_type {
             FieldType::String => {
@@ -95,27 +95,108 @@ impl<'a> VTableField<'a> {
             _ => {}
         };
 
-        // Add the field data
-        output.extend_from_slice(&field_data);
+        output.extend_from_slice(field_data.as_bytes());
 
         Ok(())
     }
 
+    pub fn encode_numeric_value(
+        &self,
+        field_data: NumericValue,
+        output: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        // Ensure the field data corresponds to the field rules
+        #[cfg(feature = "validate")]
+        self.validate_numeric_value(&field_data)?;
+
+        match field_data {
+            NumericValue::U8(value) => {
+                output.push(value);
+            }
+            NumericValue::U16(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::U32(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::U64(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::U128(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::USIZE(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::I8(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::I16(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::I32(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::I64(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::I128(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::ISIZE(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::F32(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            NumericValue::F64(value) => {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+
+        Ok(())
+    }
+
+    // pub fn encode(&self, field_data: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
+    //     // Ensure the field data corresponds to the field rules
+    //     #[cfg(feature = "validate")]
+    //     self.validate(&field_data)?;
+
+    //     // Add the field data
+    //     output.extend_from_slice(&field_data);
+
+    //     Ok(())
+    // }
+
     pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
         Ok(match &self.field_type {
             FieldType::String => self.decode_string_data(bytes)?,
-            FieldType::U8 => {
-                // println!("Decoding U8 data");
-
+            FieldType::U8 | FieldType::I8 => {
                 let field_data = bytes.drain(0..1);
 
                 field_data.collect()
             }
-            FieldType::U16 => {
+            FieldType::U16 | FieldType::I16 => {
                 let field_data = bytes.drain(0..2);
 
                 field_data.collect()
             }
+            FieldType::U32 | FieldType::F32 | FieldType::I32 => {
+                let field_data = bytes.drain(0..4);
+
+                field_data.collect()
+            }
+            FieldType::U64 | FieldType::F64 | FieldType::USIZE | FieldType::I64 => {
+                let field_data = bytes.drain(0..8);
+
+                field_data.collect()
+            }
+            FieldType::U128 | FieldType::I128 => {
+                let field_data = bytes.drain(0..16);
+
+                field_data.collect()
+            }
+
             FieldType::Struct(_) => Vec::new(),
             _ => {
                 unimplemented!("Decode Field Type: {:#?}", self.field_type);
@@ -151,7 +232,7 @@ impl<'a> VTableField<'a> {
         (encoded_length, u32::from_le_bytes(field_length) as usize)
     }
 
-    pub fn validate(&self, data: &[u8]) -> Result<(), Error> {
+    pub fn validate_str(&self, data: &str) -> Result<(), Error> {
         // Skip validation if no field rules are present
         if self.field_rules.is_none() {
             return Ok(());
@@ -166,25 +247,91 @@ impl<'a> VTableField<'a> {
                 #[cfg(feature = "regex")]
                 self.field_rules.check_regex_field_rules(data)?;
             }
-            FieldType::U8 => {
-                let data = u8::from_le_bytes([data[0]]);
-
-                // Check for value rules
-                self.field_rules.check_data_value_field_rules(data)?;
-            }
-            FieldType::U16 => {
-                let data = u16::from_le_bytes([data[0], data[1]]);
-
-                // Check for value rules
-                self.field_rules.check_data_value_field_rules(data)?;
-            }
             _ => {
-                unimplemented!("validate Field Type: {:#?}", self.field_type);
+                return Err(Error::InvalidValidationType(format!(
+                    "Invalid validation type for string field: {:#?}",
+                    self.field_type
+                )))
             }
-        };
+        }
 
         Ok(())
     }
+
+    pub fn validate_numeric_value(&self, value: &NumericValue) -> Result<(), Error> {
+        // Skip validation if no field rules are present
+        if self.field_rules.is_none() {
+            return Ok(());
+        }
+
+        self.field_rules.check_numeric_value(value)?;
+
+        Ok(())
+    }
+
+    // pub fn validate(&self, data: &[u8]) -> Result<(), Error> {
+    //     // Skip validation if no field rules are present
+    //     if self.field_rules.is_none() {
+    //         return Ok(());
+    //     }
+
+    //     match self.field_type {
+    //         FieldType::U8 => {
+    //             let data = u8::from_le_bytes([data[0]]);
+
+    //             // Check for value rules
+    //             self.field_rules.check_data_value_field_rules(data)?;
+    //         }
+    //         FieldType::U16 => {
+    //             let data = u16::from_le_bytes([data[0], data[1]]);
+
+    //             // Check for value rules
+    //             self.field_rules.check_data_value_field_rules(data)?;
+    //         }
+    //         FieldType::U32 => {
+    //             let data = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+
+    //             // Check for value rules
+    //             self.field_rules.check_data_value_field_rules(data)?;
+    //         }
+    //         FieldType::U64 => {
+    //             let data = u64::from_le_bytes([
+    //                 data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+    //             ]);
+
+    //             // Check for value rules
+    //             self.field_rules.check_data_value_field_rules(data as f64)?;
+    //         }
+    //         FieldType::U128 => {
+    //             let data = u128::from_le_bytes([
+    //                 data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+    //                 data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+    //             ]);
+
+    //             // Check for value rules
+    //             self.field_rules.check_data_value_field_rules(data as f64)?;
+    //         }
+    //         FieldType::USIZE => {
+    //             let data = usize::from_le_bytes([
+    //                 data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+    //             ]);
+
+    //             // Check for value rules
+    //             self.field_rules.check_data_value_field_rules(data as f64)?;
+    //         }
+    //         FieldType::F32 => {
+    //             let data = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+
+    //             // Check for value rules
+    //             self.field_rules.check_data_value_field_rules(data)?;
+    //         }
+    //         _ => {
+    //             unimplemented!("validate Field Type: {:#?}", self.field_type);
+    //         }
+    //     };
+
+    //     Ok(())
+    // }
 }
 
 #[derive(Debug, Clone)]
@@ -225,12 +372,164 @@ impl<'a> VTableFields<'a> {
     }
 }
 
+/// Value enum for the field type
+#[derive(Debug, Clone)]
+pub enum NumericValue {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    USIZE(usize),
+    F32(f32),
+    F64(f64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    ISIZE(isize),
+}
+
+impl Into<NumericValue> for u8 {
+    fn into(self) -> NumericValue {
+        NumericValue::U8(self)
+    }
+}
+
+impl Into<NumericValue> for u16 {
+    fn into(self) -> NumericValue {
+        NumericValue::U16(self)
+    }
+}
+
+impl Into<NumericValue> for u32 {
+    fn into(self) -> NumericValue {
+        NumericValue::U32(self)
+    }
+}
+
+impl Into<NumericValue> for u64 {
+    fn into(self) -> NumericValue {
+        NumericValue::U64(self)
+    }
+}
+
+impl Into<NumericValue> for u128 {
+    fn into(self) -> NumericValue {
+        NumericValue::U128(self)
+    }
+}
+
+impl Into<NumericValue> for usize {
+    fn into(self) -> NumericValue {
+        NumericValue::USIZE(self)
+    }
+}
+
+impl Into<NumericValue> for f32 {
+    fn into(self) -> NumericValue {
+        NumericValue::F32(self)
+    }
+}
+
+impl Into<NumericValue> for f64 {
+    fn into(self) -> NumericValue {
+        NumericValue::F64(self)
+    }
+}
+
+impl Into<NumericValue> for i8 {
+    fn into(self) -> NumericValue {
+        NumericValue::I8(self)
+    }
+}
+
+impl Into<NumericValue> for i16 {
+    fn into(self) -> NumericValue {
+        NumericValue::I16(self)
+    }
+}
+
+impl Into<NumericValue> for i32 {
+    fn into(self) -> NumericValue {
+        NumericValue::I32(self)
+    }
+}
+
+impl Into<NumericValue> for i64 {
+    fn into(self) -> NumericValue {
+        NumericValue::I64(self)
+    }
+}
+
+impl Into<NumericValue> for i128 {
+    fn into(self) -> NumericValue {
+        NumericValue::I128(self)
+    }
+}
+
+impl Into<NumericValue> for isize {
+    fn into(self) -> NumericValue {
+        NumericValue::ISIZE(self)
+    }
+}
+
+/// Implement Eq for NumericValue
+impl Eq for NumericValue {}
+
+/// Implement PartialEq for NumericValue
+impl PartialEq for NumericValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (NumericValue::U8(a), NumericValue::U8(b)) => a.eq(b),
+            (NumericValue::U16(a), NumericValue::U16(b)) => a.eq(b),
+            (NumericValue::U32(a), NumericValue::U32(b)) => a.eq(b),
+            (NumericValue::U64(a), NumericValue::U64(b)) => a.eq(b),
+            (NumericValue::U128(a), NumericValue::U128(b)) => a.eq(b),
+            (NumericValue::USIZE(a), NumericValue::USIZE(b)) => a.eq(b),
+            (NumericValue::F32(a), NumericValue::F32(b)) => a.eq(b),
+            (NumericValue::F64(a), NumericValue::F64(b)) => a.eq(b),
+            (NumericValue::I8(a), NumericValue::I8(b)) => a.eq(b),
+            (NumericValue::I16(a), NumericValue::I16(b)) => a.eq(b),
+            (NumericValue::I32(a), NumericValue::I32(b)) => a.eq(b),
+            (NumericValue::I64(a), NumericValue::I64(b)) => a.eq(b),
+            (NumericValue::I128(a), NumericValue::I128(b)) => a.eq(b),
+            (NumericValue::ISIZE(a), NumericValue::ISIZE(b)) => a.eq(b),
+            _ => false,
+        }
+    }
+}
+
+/// Implement Partial Ord for NumericValue
+impl PartialOrd for NumericValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (NumericValue::U8(a), NumericValue::U8(b)) => a.partial_cmp(b),
+            (NumericValue::U16(a), NumericValue::U16(b)) => a.partial_cmp(b),
+            (NumericValue::U32(a), NumericValue::U32(b)) => a.partial_cmp(b),
+            (NumericValue::U64(a), NumericValue::U64(b)) => a.partial_cmp(b),
+            (NumericValue::U128(a), NumericValue::U128(b)) => a.partial_cmp(b),
+            (NumericValue::USIZE(a), NumericValue::USIZE(b)) => a.partial_cmp(b),
+            (NumericValue::F32(a), NumericValue::F32(b)) => a.partial_cmp(b),
+            (NumericValue::F64(a), NumericValue::F64(b)) => a.partial_cmp(b),
+            (NumericValue::I8(a), NumericValue::I8(b)) => a.partial_cmp(b),
+            (NumericValue::I16(a), NumericValue::I16(b)) => a.partial_cmp(b),
+            (NumericValue::I32(a), NumericValue::I32(b)) => a.partial_cmp(b),
+            (NumericValue::I64(a), NumericValue::I64(b)) => a.partial_cmp(b),
+            (NumericValue::I128(a), NumericValue::I128(b)) => a.partial_cmp(b),
+            (NumericValue::ISIZE(a), NumericValue::ISIZE(b)) => a.partial_cmp(b),
+            _ => None,
+        }
+    }
+}
+
 /// Optional rules for a field
 #[derive(Debug, Clone)]
 pub struct FieldRules {
     pub ignore: bool,
-    pub max_value: Option<usize>,
-    pub min_value: Option<usize>,
+    pub max_value: Option<NumericValue>,
+    pub min_value: Option<NumericValue>,
     pub max_length: Option<usize>,
     pub min_length: Option<usize>,
     // An absolute length
@@ -324,9 +623,9 @@ impl FieldRules {
     }
 
     #[cfg(feature = "regex")]
-    pub fn check_regex_field_rules(&self, data: &[u8]) -> Result<(), Error> {
+    pub fn check_regex_field_rules(&self, data: &str) -> Result<(), Error> {
         if let Some(regex_rules) = self.regex() {
-            if !regex_rules.is_match(std::str::from_utf8(data)?) {
+            if !regex_rules.is_match(data) {
                 let msg = format!("data does not match regex: {regex_rules}");
                 return Err(Error::FieldRulesRegex(msg));
             }
@@ -366,20 +665,17 @@ impl FieldRules {
         Ok(())
     }
 
-    // Check if u8 value is within the max and min value
-    pub fn check_data_value_field_rules(&self, value: impl Into<usize>) -> Result<(), Error> {
-        let value = value.into();
-
-        if let Some(max_value) = self.max_value {
+    pub fn check_numeric_value(&self, value: &NumericValue) -> Result<(), Error> {
+        if let Some(max_value) = &self.max_value {
             if value > max_value {
-                let msg = format!("data value exceeds field max value: {max_value}");
+                let msg = format!("data value exceeds field max value: {:?}", max_value);
                 return Err(Error::FieldRulesValue(msg));
             }
         }
 
-        if let Some(min_value) = self.min_value {
+        if let Some(min_value) = &self.min_value {
             if value < min_value {
-                let msg = format!("data value is less than min value: {min_value}");
+                let msg = format!("data value is less than min value: {:?}", min_value);
                 return Err(Error::FieldRulesValue(msg));
             }
         };
@@ -429,6 +725,8 @@ pub enum FieldType<'a> {
     U16,
     U32,
     U64,
+    U128,
+    USIZE,
     I8,
     I16,
     I32,
@@ -467,6 +765,8 @@ impl<'a> From<&'a str> for FieldType<'a> {
             "u16" => FieldType::U16,
             "u32" => FieldType::U32,
             "u64" => FieldType::U64,
+            "u128" => FieldType::U128,
+            "usize" => FieldType::USIZE,
             "i8" => FieldType::I8,
             "i16" => FieldType::I16,
             "i32" => FieldType::I32,
@@ -495,19 +795,21 @@ impl<'a> From<u8> for FieldType<'a> {
             1 => FieldType::U16,
             2 => FieldType::U32,
             3 => FieldType::U64,
-            4 => FieldType::I8,
-            5 => FieldType::I16,
-            6 => FieldType::I32,
-            7 => FieldType::I64,
-            8 => FieldType::I128,
-            9 => FieldType::F32,
-            10 => FieldType::F64,
-            11 => FieldType::String,
-            12 => FieldType::Str,
-            13 => FieldType::Vec,
-            14 => FieldType::Bytes,
-            15 => FieldType::Bool,
-            16 => FieldType::Struct(""),
+            4 => FieldType::U128,
+            5 => FieldType::USIZE,
+            6 => FieldType::I8,
+            7 => FieldType::I16,
+            8 => FieldType::I32,
+            9 => FieldType::I64,
+            10 => FieldType::I128,
+            11 => FieldType::F32,
+            12 => FieldType::F64,
+            13 => FieldType::String,
+            14 => FieldType::Str,
+            15 => FieldType::Vec,
+            16 => FieldType::Bytes,
+            17 => FieldType::Bool,
+            18 => FieldType::Struct(""),
             _ => todo!("Handle unknown field type"),
         }
     }
@@ -520,19 +822,21 @@ impl<'a> Into<u8> for FieldType<'a> {
             FieldType::U16 => 1,
             FieldType::U32 => 2,
             FieldType::U64 => 3,
-            FieldType::I8 => 4,
-            FieldType::I16 => 5,
-            FieldType::I32 => 6,
-            FieldType::I64 => 7,
-            FieldType::I128 => 8,
-            FieldType::F32 => 9,
-            FieldType::F64 => 10,
-            FieldType::String => 11,
-            FieldType::Str => 12,
-            FieldType::Vec => 13,
-            FieldType::Bytes => 14,
-            FieldType::Bool => 15,
-            FieldType::Struct(_) => 16,
+            FieldType::U128 => 4,
+            FieldType::USIZE => 5,
+            FieldType::I8 => 6,
+            FieldType::I16 => 7,
+            FieldType::I32 => 8,
+            FieldType::I64 => 9,
+            FieldType::I128 => 10,
+            FieldType::F32 => 11,
+            FieldType::F64 => 12,
+            FieldType::String => 13,
+            FieldType::Str => 14,
+            FieldType::Vec => 15,
+            FieldType::Bytes => 16,
+            FieldType::Bool => 17,
+            FieldType::Struct(_) => 18,
         }
     }
 }

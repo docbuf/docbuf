@@ -23,7 +23,7 @@ pub struct Document {
     pub title: String,
     #[docbuf {
         min_length = 0;
-        max_length = 100;
+        max_length = 4096;
         default = "Hello, World!";
     }]
     pub body: String,
@@ -45,7 +45,20 @@ pub struct Metadata {
     #[docbuf {
         min_length = 0;
     }]
-    pub metadata: String,
+    pub description: String,
+    pub u8_data: u8,
+    pub u16_data: u16,
+    pub u32_data: u32,
+    pub u64_data: u64,
+    pub u128_data: u128,
+    pub usize_data: usize,
+    pub f32_data: f32,
+    pub f64_data: f64,
+    pub i8_data: i8,
+    pub i16_data: i16,
+    pub i32_data: i32,
+    pub i64_data: i64,
+    pub i128_data: i128,
     pub signature: Signature,
 }
 
@@ -58,20 +71,31 @@ pub struct Signature {
         length = 32;
     }]
     pub signature: String,
-    pub u8_data: u8,
 }
 
 impl Document {
     pub fn dummy() -> Self {
         Self {
-            title: String::from("MyAwesomeDocument"),
-            body: String::from("MyAwesomeDocument Contents"),
-            footer: String::from("MyAwesomeDocument Copyright"),
+            title: ["0"; 64].concat(),
+            body: ["0"; 2048].concat(),
+            footer: ["0"; 32].concat(),
             metadata: Metadata {
-                metadata: String::from("MyAwesomeDocument Metadata"),
+                description: ["0"; 512].concat(),
+                u8_data: u8::MAX,
+                u16_data: u16::MAX,
+                u32_data: u32::MAX,
+                u64_data: u64::MAX,
+                u128_data: u128::MAX,
+                usize_data: usize::MAX,
+                f32_data: f32::MAX,
+                f64_data: f64::MAX,
+                i8_data: i8::MIN,
+                i16_data: i16::MIN,
+                i32_data: i32::MIN,
+                i64_data: i64::MIN,
+                i128_data: i128::MIN,
                 signature: Signature {
-                    signature: ["12345678"; 4].concat(),
-                    u8_data: 0x0A,
+                    signature: ["0"; 32].concat(),
                 },
             },
         }
@@ -105,6 +129,10 @@ fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
         // Serialization Size Comparison Test
         .assert_serialization_size(&mut buffer)
         .expect("Failed encoding benchmark");
+
+    let doc = Document::from_docbuf(&mut buffer)?;
+
+    println!("doc: {:?}", doc);
 
     Ok(())
 }

@@ -48,8 +48,8 @@ impl<'a> DocBufSerializer<'a> {
         }
     }
 
-    // Encode the data into the output vector
-    pub fn encode(&mut self, data: impl AsRef<[u8]>) -> Result<()> {
+    // Encode the &str data into the output vector
+    pub fn encode_str(&mut self, data: &str) -> Result<()> {
         let field = match self.current_field {
             Some(field) => field,
             _ => self
@@ -58,10 +58,40 @@ impl<'a> DocBufSerializer<'a> {
                 .field_by_index(&self.current_field_index)?,
         };
 
-        field.encode(data.as_ref(), &mut self.output)?;
+        field.encode_str(data, &mut self.output)?;
 
         Ok(())
     }
+
+    // Encode the &str data into the output vector
+    pub fn encode_numeric(&mut self, data: NumericValue) -> Result<()> {
+        let field = match self.current_field {
+            Some(field) => field,
+            _ => self
+                .vtable
+                .struct_by_index(self.current_item_index)?
+                .field_by_index(&self.current_field_index)?,
+        };
+
+        field.encode_numeric_value(data, &mut self.output)?;
+
+        Ok(())
+    }
+
+    // // Encode the data into the output vector
+    // pub fn encode(&mut self, data: impl AsRef<[u8]>) -> Result<()> {
+    //     let field = match self.current_field {
+    //         Some(field) => field,
+    //         _ => self
+    //             .vtable
+    //             .struct_by_index(self.current_item_index)?
+    //             .field_by_index(&self.current_field_index)?,
+    //     };
+
+    //     field.encode(data.as_ref(), &mut self.output)?;
+
+    //     Ok(())
+    // }
 }
 
 pub fn to_docbuf_writer<T>(value: &T, buffer: &mut Vec<u8>) -> Result<()>
@@ -131,60 +161,56 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
         unimplemented!("serialize_char")
     }
 
-    fn serialize_f32(self, _v: f32) -> Result<Self::Ok> {
-        unimplemented!("serialize_f32")
+    fn serialize_f32(self, v: f32) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::F32(v))
     }
 
-    fn serialize_f64(self, _v: f64) -> Result<Self::Ok> {
-        unimplemented!("serialize_f64")
+    fn serialize_f64(self, v: f64) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::F64(v))
     }
 
-    fn serialize_i8(self, _v: i8) -> Result<Self::Ok> {
-        unimplemented!("serialize_i8")
+    fn serialize_i8(self, v: i8) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::I8(v))
     }
 
-    fn serialize_i16(self, _v: i16) -> Result<Self::Ok> {
-        unimplemented!("serialize_i16")
+    fn serialize_i16(self, v: i16) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::I16(v))
     }
 
-    fn serialize_i32(self, _v: i32) -> Result<Self::Ok> {
-        unimplemented!("serialize_i32")
+    fn serialize_i32(self, v: i32) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::I32(v))
     }
 
-    fn serialize_i64(self, _v: i64) -> Result<Self::Ok> {
-        unimplemented!("serialize_i64")
+    fn serialize_i64(self, v: i64) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::I64(v))
     }
 
-    fn serialize_i128(self, _v: i128) -> Result<Self::Ok> {
-        unimplemented!("serialize_i128")
+    fn serialize_i128(self, v: i128) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::I128(v))
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        self.encode(v.as_bytes())
+        self.encode_str(v)
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
-        self.encode(v.to_le_bytes())?;
-
-        Ok(())
+        self.encode_numeric(NumericValue::U8(v))
     }
 
     fn serialize_u16(self, v: u16) -> Result<Self::Ok> {
-        self.encode(v.to_le_bytes())?;
-
-        Ok(())
+        self.encode_numeric(NumericValue::U16(v))
     }
 
-    fn serialize_u32(self, _v: u32) -> Result<Self::Ok> {
-        unimplemented!("serialize_u32")
+    fn serialize_u32(self, v: u32) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::U32(v))
     }
 
-    fn serialize_u64(self, _v: u64) -> Result<Self::Ok> {
-        unimplemented!("serialize_u64")
+    fn serialize_u64(self, v: u64) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::U64(v))
     }
 
-    fn serialize_u128(self, _v: u128) -> Result<Self::Ok> {
-        unimplemented!("serialize_u128")
+    fn serialize_u128(self, v: u128) -> Result<Self::Ok> {
+        self.encode_numeric(NumericValue::U128(v))
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {

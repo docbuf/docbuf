@@ -109,32 +109,116 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
         unimplemented!("deserialize_bool")
     }
 
-    fn deserialize_i8<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_i8")
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value = i8::from_le_bytes([field_data[0]]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_i8(value)
     }
 
-    fn deserialize_i16<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_i16")
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value = i16::from_le_bytes([field_data[0], field_data[1]]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_i16(value)
     }
 
-    fn deserialize_i32<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_i32")
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value =
+            i32::from_le_bytes([field_data[0], field_data[1], field_data[2], field_data[3]]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_i32(value)
     }
 
-    fn deserialize_i64<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value = i64::from_le_bytes([
+            field_data[0],
+            field_data[1],
+            field_data[2],
+            field_data[3],
+            field_data[4],
+            field_data[5],
+            field_data[6],
+            field_data[7],
+        ]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_i64(value)
+    }
+
+    fn deserialize_i128<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value = i128::from_le_bytes([
+            field_data[0],
+            field_data[1],
+            field_data[2],
+            field_data[3],
+            field_data[4],
+            field_data[5],
+            field_data[6],
+            field_data[7],
+            field_data[8],
+            field_data[9],
+            field_data[10],
+            field_data[11],
+            field_data[12],
+            field_data[13],
+            field_data[14],
+            field_data[15],
+        ]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_i128(value)
     }
 
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
@@ -171,32 +255,129 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
         visitor.visit_u16(value)
     }
 
-    fn deserialize_u32<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_u32")
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value =
+            u32::from_le_bytes([field_data[0], field_data[1], field_data[2], field_data[3]]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_u32(value)
     }
 
-    fn deserialize_u64<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_u64")
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value = u64::from_le_bytes([
+            field_data[0],
+            field_data[1],
+            field_data[2],
+            field_data[3],
+            field_data[4],
+            field_data[5],
+            field_data[6],
+            field_data[7],
+        ]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_u64(value)
     }
 
-    fn deserialize_f32<V>(self, _visitor: V) -> Result<V::Value>
+    /// Hint that the `Deserialize` type is expecting an `u128` value.
+    ///
+    /// The default behavior unconditionally returns an error.
+    fn deserialize_u128<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_f32")
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value = u128::from_le_bytes([
+            field_data[0],
+            field_data[1],
+            field_data[2],
+            field_data[3],
+            field_data[4],
+            field_data[5],
+            field_data[6],
+            field_data[7],
+            field_data[8],
+            field_data[9],
+            field_data[10],
+            field_data[11],
+            field_data[12],
+            field_data[13],
+            field_data[14],
+            field_data[15],
+        ]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_u128(value)
     }
 
-    fn deserialize_f64<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_f64")
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value =
+            f32::from_le_bytes([field_data[0], field_data[1], field_data[2], field_data[3]]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_f32(value)
+    }
+
+    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        let field_data = self
+            .raw_values
+            .remove(self.current_item_index, self.current_field_index)
+            .unwrap_or_default();
+
+        let value = f64::from_le_bytes([
+            field_data[0],
+            field_data[1],
+            field_data[2],
+            field_data[3],
+            field_data[4],
+            field_data[5],
+            field_data[6],
+            field_data[7],
+        ]);
+
+        // Increment the field index
+        self.increment_current_field_index();
+
+        visitor.visit_f64(value)
     }
 
     fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>

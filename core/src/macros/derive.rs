@@ -233,7 +233,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
         fn vtable() -> Result<&'static ::docbuf_core::vtable::VTable<'static>, ::docbuf_core::error::Error> {
             static VTABLE: ::std::sync::OnceLock<::docbuf_core::vtable::VTable> = ::std::sync::OnceLock::new();
 
-            Ok(VTABLE.get_or_init(|| {
+            let vtable = VTABLE.get_or_init(||  {
                 let mut vtable = ::docbuf_core::vtable::VTable::new();
 
                 let mut vtable_struct = ::docbuf_core::vtable::VTableStruct::new(stringify!(#name), None);
@@ -253,7 +253,9 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                 vtable.add_struct(vtable_struct);
 
                 vtable
-            }))
+            });
+
+            Ok(vtable)
         }
     };
 
@@ -376,18 +378,24 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
         .attrs
         .iter()
         .map(|attr| {
+            let field_type = &input.ty;
+
             let attributes = parse_docbuf_field_attrs(attr.to_token_stream())?;
 
-            let rules = attributes.iter().map(|(_, (key, value))| {
-                match key.to_string().as_str() {
+            let rules = attributes
+                .iter()
+                .map(|(_, (key, value))| match key.to_string().as_str() {
                     "sign" | "ignore" => {
                         quote! {
                             field_rules.#key = #value;
                         }
                     }
-                    "min_value" | "max_value" |
-                    "min_length" | "max_length" |
-                    "length" => {
+                    "min_value" | "max_value" => {
+                        quote! {
+                            field_rules.#key = Some((#value as #field_type).into());
+                        }
+                    }
+                    "min_length" | "max_length" | "length" => {
                         quote! {
                             field_rules.#key = Some(#value);
                         }
@@ -395,14 +403,17 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
                     #[cfg(feature = "regex")]
                     "regex" => {
                         quote! {
-                            field_rules.#key = Some(::docbuf_core::validate::regex::Regex::new(#value)?);
+                            field_rules.#key = Some(
+                                ::docbuf_core::validate::regex::Regex::new(#value)
+                                    .expect(&format!("Invalid regex: {:?}", #value))
+                            );
                         }
                     }
                     _ => {
                         quote!()
                     }
-                }
-            }).collect::<Vec<TokenStream>>();
+                })
+                .collect::<Vec<TokenStream>>();
 
             Ok(quote!(
                 #(#rules)*
