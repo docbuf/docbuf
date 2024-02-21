@@ -48,32 +48,29 @@ impl<'a> DocBufSerializer<'a> {
         }
     }
 
-    // Encode the &str data into the output vector
-    pub fn encode_str(&mut self, data: &str) -> Result<()> {
-        let field = match self.current_field {
+    // Return the current field or find it in the vtable based on the
+    // current_item_index and current_field_index
+    pub fn current_field(&self) -> Result<&'static VTableField<'static>> {
+        Ok(match self.current_field {
             Some(field) => field,
             _ => self
                 .vtable
                 .struct_by_index(self.current_item_index)?
                 .field_by_index(&self.current_field_index)?,
-        };
+        })
+    }
 
-        field.encode_str(data, &mut self.output)?;
+    // Encode the &str data into the output vector
+    pub fn encode_str(&mut self, data: &str) -> Result<()> {
+        self.current_field()?.encode_str(data, &mut self.output)?;
 
         Ok(())
     }
 
     // Encode the &str data into the output vector
     pub fn encode_numeric(&mut self, data: NumericValue) -> Result<()> {
-        let field = match self.current_field {
-            Some(field) => field,
-            _ => self
-                .vtable
-                .struct_by_index(self.current_item_index)?
-                .field_by_index(&self.current_field_index)?,
-        };
-
-        field.encode_numeric_value(data, &mut self.output)?;
+        self.current_field()?
+            .encode_numeric_value(data, &mut self.output)?;
 
         Ok(())
     }

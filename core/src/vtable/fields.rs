@@ -109,64 +109,11 @@ impl<'a> VTableField<'a> {
         #[cfg(feature = "validate")]
         self.validate_numeric_value(&field_data)?;
 
-        match field_data {
-            NumericValue::U8(value) => {
-                output.push(value);
-            }
-            NumericValue::U16(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::U32(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::U64(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::U128(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::USIZE(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::I8(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::I16(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::I32(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::I64(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::I128(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::ISIZE(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::F32(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-            NumericValue::F64(value) => {
-                output.extend_from_slice(&value.to_le_bytes());
-            }
-        }
+        // Encode the field data
+        field_data.encode(output)?;
 
         Ok(())
     }
-
-    // pub fn encode(&self, field_data: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
-    //     // Ensure the field data corresponds to the field rules
-    //     #[cfg(feature = "validate")]
-    //     self.validate(&field_data)?;
-
-    //     // Add the field data
-    //     output.extend_from_slice(&field_data);
-
-    //     Ok(())
-    // }
 
     pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
         Ok(match &self.field_type {
@@ -268,70 +215,6 @@ impl<'a> VTableField<'a> {
 
         Ok(())
     }
-
-    // pub fn validate(&self, data: &[u8]) -> Result<(), Error> {
-    //     // Skip validation if no field rules are present
-    //     if self.field_rules.is_none() {
-    //         return Ok(());
-    //     }
-
-    //     match self.field_type {
-    //         FieldType::U8 => {
-    //             let data = u8::from_le_bytes([data[0]]);
-
-    //             // Check for value rules
-    //             self.field_rules.check_data_value_field_rules(data)?;
-    //         }
-    //         FieldType::U16 => {
-    //             let data = u16::from_le_bytes([data[0], data[1]]);
-
-    //             // Check for value rules
-    //             self.field_rules.check_data_value_field_rules(data)?;
-    //         }
-    //         FieldType::U32 => {
-    //             let data = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-
-    //             // Check for value rules
-    //             self.field_rules.check_data_value_field_rules(data)?;
-    //         }
-    //         FieldType::U64 => {
-    //             let data = u64::from_le_bytes([
-    //                 data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-    //             ]);
-
-    //             // Check for value rules
-    //             self.field_rules.check_data_value_field_rules(data as f64)?;
-    //         }
-    //         FieldType::U128 => {
-    //             let data = u128::from_le_bytes([
-    //                 data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-    //                 data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
-    //             ]);
-
-    //             // Check for value rules
-    //             self.field_rules.check_data_value_field_rules(data as f64)?;
-    //         }
-    //         FieldType::USIZE => {
-    //             let data = usize::from_le_bytes([
-    //                 data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-    //             ]);
-
-    //             // Check for value rules
-    //             self.field_rules.check_data_value_field_rules(data as f64)?;
-    //         }
-    //         FieldType::F32 => {
-    //             let data = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-
-    //             // Check for value rules
-    //             self.field_rules.check_data_value_field_rules(data)?;
-    //         }
-    //         _ => {
-    //             unimplemented!("validate Field Type: {:#?}", self.field_type);
-    //         }
-    //     };
-
-    //     Ok(())
-    // }
 }
 
 #[derive(Debug, Clone)]
@@ -389,6 +272,31 @@ pub enum NumericValue {
     I64(i64),
     I128(i128),
     ISIZE(isize),
+}
+
+impl NumericValue {
+    pub fn encode(&self, output: &mut Vec<u8>) -> Result<(), Error> {
+        match self {
+            NumericValue::U8(value) => {
+                output.push(*value);
+            }
+            NumericValue::U16(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::U32(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::U64(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::U128(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::USIZE(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::F32(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::F64(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::I8(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::I16(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::I32(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::I64(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::I128(value) => output.extend_from_slice(&value.to_le_bytes()),
+            NumericValue::ISIZE(value) => output.extend_from_slice(&value.to_le_bytes()),
+        };
+
+        Ok(())
+    }
 }
 
 impl Into<NumericValue> for u8 {
