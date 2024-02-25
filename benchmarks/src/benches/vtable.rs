@@ -46,16 +46,16 @@ pub fn benchmark_vtable_struct_lookup(c: &mut Criterion) {
     group.finish();
 }
 
-pub fn benchmark_le_bytes(c: &mut Criterion) {
-    let mut group = c.benchmark_group("benchmark_le_bytes");
+// pub fn benchmark_le_bytes(c: &mut Criterion) {
+//     let mut group = c.benchmark_group("benchmark_le_bytes");
 
-    group.bench_function("benchmark_u16_bytes", |b| {
-        b.iter(|| black_box(FieldRules::le_bytes_data_length(u16::MAX as usize)))
-    });
+//     group.bench_function("benchmark_u16_bytes", |b| {
+//         b.iter(|| black_box(FieldRules::le_bytes_data_length(u16::MAX as usize)))
+//     });
 
-    group.bench_function("benchmark_u64_le_bytes", |b| {
-        b.iter(|| black_box(FieldRules::le_bytes_data_length(u64::MAX as usize)))
-    });
+//     group.bench_function("benchmark_u64_le_bytes", |b| {
+//         b.iter(|| black_box(FieldRules::le_bytes_data_length(u64::MAX as usize)))
+//     });
 
-    group.finish();
-}
+//     group.finish();
+// }

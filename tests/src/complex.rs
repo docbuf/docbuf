@@ -59,6 +59,8 @@ pub struct Metadata {
     pub i32_data: i32,
     pub i64_data: i64,
     pub i128_data: i128,
+    pub isize_data: isize,
+    pub hash_map_data: std::collections::HashMap<String, String>,
     pub signature: Signature,
 }
 
@@ -94,6 +96,15 @@ impl Document {
                 i32_data: i32::MIN,
                 i64_data: i64::MIN,
                 i128_data: i128::MIN,
+                isize_data: isize::MIN,
+                hash_map_data: (|| {
+                    let mut map = std::collections::HashMap::new();
+                    map.insert("0".to_string(), "0".to_string());
+                    map.insert("1".to_string(), "1".to_string());
+                    map.insert("2".to_string(), "2".to_string());
+                    map.insert("3".to_string(), ["3"; 500].concat());
+                    map
+                })(),
                 signature: Signature {
                     signature: ["0"; 32].concat(),
                 },
@@ -118,9 +129,7 @@ fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
 
     let mut buffer = Vec::with_capacity(1024);
 
-    // let mut hasher = sha2::Sha256::default();
-    // let hash = document.hash(&mut hasher)?;
-    // println!("hash: {:?}", hash);
+    println!("document: {:?}", document);
 
     document
         // Round Trip Test
@@ -133,6 +142,26 @@ fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
     let doc = Document::from_docbuf(&mut buffer)?;
 
     println!("doc: {:?}", doc);
+
+    Ok(())
+}
+
+#[test]
+fn test_serialize_hash_map() -> Result<(), docbuf_core::error::Error> {
+    let mut map = std::collections::HashMap::new();
+    map.insert("0".to_string(), "0".to_string());
+    map.insert("1".to_string(), "1".to_string());
+    map.insert("2".to_string(), "2".to_string());
+    map.insert("3".to_string(), ["3"; 1024].concat());
+
+    let mut buffer = Vec::with_capacity(1024);
+
+    bincode::serialize_into(&mut buffer, &map).expect("Failed to serialize");
+
+    println!("Bincode Buffer: {:?}", buffer);
+    println!("Buffer length: {:?}", buffer.len());
+
+    //
 
     Ok(())
 }

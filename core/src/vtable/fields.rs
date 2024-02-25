@@ -6,10 +6,13 @@ pub use super::*;
 use crate::validate::regex::Regex;
 
 // Number of bytes in a gigabyte as a usize
-pub const GIGABYTES: usize = 1024 * 1024 * 1024;
+pub const GIGABYTE: usize = 1024 * 1024 * 1024;
 
 // Maximum size of a field in a struct
-pub const MAX_FIELD_SIZE: usize = GIGABYTES;
+pub const MAX_FIELD_SIZE: usize = GIGABYTE;
+
+// Maximum number of map entries
+pub const MAX_MAP_ENTRIES: usize = 256 * 256 * 256;
 
 // Default field length encoded as 4 le bytes
 pub const DEFAULT_FIELD_LENGTH_LE_BYTES: usize = 4;
@@ -19,6 +22,7 @@ pub const U16_MAX: usize = u16::MAX as usize;
 pub const U32_MAX: usize = u32::MAX as usize;
 pub const U64_MAX: usize = u64::MAX as usize;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LeBytes {
     U8([u8; 1]),
     U16([u8; 2]),
@@ -80,22 +84,46 @@ impl<'a> VTableField<'a> {
         }
     }
 
+    pub fn encode_map_start(&self, num_entries: usize, output: &mut Vec<u8>) -> Result<(), Error> {
+        // println!("Num entries: {}", num_entries);
+
+        // Check if the num entries exceeds the maximum allowed.
+        if num_entries >= MAX_MAP_ENTRIES {
+            return Err(Error::MapEntriesExceedsMax(num_entries));
+        }
+
+        // Only encode the first three bytes
+        output.extend_from_slice(&(num_entries as u32).to_le_bytes()[0..3]);
+
+        // println!("encode_map_start OUTPUT: {:?}", output);
+
+        Ok(())
+    }
+
     pub fn encode_str(&self, field_data: &str, output: &mut Vec<u8>) -> Result<(), Error> {
         // Ensure the field data corresponds to the field rules
         #[cfg(feature = "validate")]
         self.validate_str(field_data)?;
 
-        match self.field_type {
+        match &self.field_type {
             FieldType::String => {
                 // prepend length to the field data
-                let length = FieldRules::le_bytes_data_length(field_data.len());
+                let length = (field_data.len() as u32).to_le_bytes();
 
-                output.extend_from_slice(length.as_bytes());
+                output.extend_from_slice(length.as_slice());
+            }
+            FieldType::HashMap { key, value } => {
+                // prepend length to the field data
+                let length = (field_data.len() as u32).to_le_bytes();
+
+                output.extend_from_slice(length.as_slice());
             }
             _ => {}
         };
 
         output.extend_from_slice(field_data.as_bytes());
+
+        // println!("encode_str OUTPUT: {:?}", output);
 
         Ok(())
     }
@@ -133,7 +161,11 @@ impl<'a> VTableField<'a> {
 
                 field_data.collect()
             }
-            FieldType::U64 | FieldType::F64 | FieldType::USIZE | FieldType::I64 => {
+            FieldType::U64
+            | FieldType::F64
+            | FieldType::USIZE
+            | FieldType::I64
+            | FieldType::ISIZE => {
                 let field_data = bytes.drain(0..8);
 
                 field_data.collect()
@@ -145,38 +177,77 @@ impl<'a> VTableField<'a> {
             }
 
             FieldType::Struct(_) => Vec::new(),
+            FieldType::HashMap { key, value } => self.decode_map_data(key, value, bytes)?,
             _ => {
                 unimplemented!("Decode Field Type: {:#?}", self.field_type);
             }
         })
     }
 
+    pub fn decode_map_data(
+        &self,
+        key: &Box<FieldType>,
+        value: &Box<FieldType>,
+        bytes: &mut Vec<u8>,
+    ) -> Result<Vec<u8>, Error> {
+        // println!("Decoding Map Data");
+
+        let mut output = Vec::with_capacity(1024);
+
+        let num_entries = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0]);
+
+        if num_entries == 0 {
+            return Ok(output);
+        }
+
+        // Remove the first three bytes
+        bytes.drain(0..3);
+
+        // println!("Num Entries: {}", num_entries);
+
+        // multiply the entries by 2 to account for the key and value pairs
+        for _ in 0..num_entries * 2 {
+            let field_data_length = self.decode_field_data_length(bytes);
+
+            // Remove the encoded length from the bytes
+            // bytes.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES);
+
+            // Remove the field data from the bytes and return it
+            output.extend_from_slice(
+                bytes
+                    .drain(0..field_data_length + DEFAULT_FIELD_LENGTH_LE_BYTES)
+                    .as_slice(),
+            );
+
+            // println!("Remaing Bytes: {:?}", bytes);
+        }
+
+        // println!("Output: {:?}", output);
+
+        Ok(output)
+    }
+
     // Decodes the field data from the bytes input.
     // Returns the raw field data and removes the field data from the bytes, including its length.
     pub fn decode_string_data(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
-        let (encoded_length, field_data_length) = self.decode_field_data_length(bytes);
-
-        if encoded_length == 0 {
-            return Ok(Vec::new());
-        }
+        let field_data_length = self.decode_field_data_length(bytes);
 
         // Remove the encoded length from the bytes
-        bytes.drain(0..encoded_length);
+        bytes.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES);
         // Remove the field data from the bytes and return it
         let field_data = bytes.drain(0..field_data_length);
 
         Ok(field_data.collect())
     }
 
-    pub fn decode_field_data_length(&self, bytes: &[u8]) -> (usize, usize) {
+    pub fn decode_field_data_length(&self, bytes: &[u8]) -> usize {
         let mut field_length = [0u8; DEFAULT_FIELD_LENGTH_LE_BYTES];
-        let encoded_length = self.field_rules.encoded_data_length(bytes);
 
-        for byte in 0..encoded_length {
+        for byte in 0..DEFAULT_FIELD_LENGTH_LE_BYTES {
             field_length[byte] = bytes[byte];
         }
 
-        (encoded_length, u32::from_le_bytes(field_length) as usize)
+        u32::from_le_bytes(field_length) as usize
     }
 
     pub fn validate_str(&self, data: &str) -> Result<(), Error> {
@@ -591,40 +662,42 @@ impl FieldRules {
         Ok(())
     }
 
-    pub fn le_bytes_data_length(length: usize) -> LeBytes {
-        if length <= U8_MAX {
-            LeBytes::U8((length as u8).to_le_bytes())
-        } else if U8_MAX < length && length <= U16_MAX {
-            LeBytes::U16((length as u16).to_le_bytes())
-        } else if U16_MAX < length && length <= U32_MAX {
-            LeBytes::U32((length as u32).to_le_bytes())
-        } else if U32_MAX < length && length <= U64_MAX {
-            LeBytes::U64((length as u64).to_le_bytes())
-        } else {
-            LeBytes::U32((length as u32).to_le_bytes())
-        }
-    }
+    // pub fn le_bytes_data_length(length: usize) -> LeBytes {
+    //     if length <= U8_MAX {
+    //         LeBytes::U8((length as u8).to_le_bytes())
+    //     } else if U8_MAX < length && length <= U16_MAX {
+    //         LeBytes::U16((length as u16).to_le_bytes())
+    //     } else if U16_MAX < length && length <= U32_MAX {
+    //         LeBytes::U32((length as u32).to_le_bytes())
+    //     } else if U32_MAX < length && length <= U64_MAX {
+    //         LeBytes::U64((length as u64).to_le_bytes())
+    //     } else {
+    //         LeBytes::U32((length as u32).to_le_bytes())
+    //     }
+    // }
 
-    pub fn encoded_data_length(&self, bytes: &[u8]) -> usize {
-        if let Some(length) = self.length {
-            FieldRules::le_bytes_data_length(length).len()
-        } else if let Some(max_length) = self.max_length {
-            FieldRules::le_bytes_data_length(max_length).len()
-        } else {
-            if bytes.is_empty() {
-                0
-            } else if bytes.len() < DEFAULT_FIELD_LENGTH_LE_BYTES {
-                1
-            } else {
-                match [bytes[0], bytes[1], bytes[2], bytes[3]] {
-                    [0, 0, 0, _] => 4,
-                    [0, 0, _, _] => 3,
-                    [0, _, _, _] => 2,
-                    _ => 1,
-                }
-            }
-        }
-    }
+    // pub fn encoded_data_length(&self, bytes: &[u8]) -> usize {
+    //     if let Some(length) = self.length {
+    //         FieldRules::le_bytes_data_length(length).len()
+    //     } else if let Some(max_length) = self.max_length {
+    //         FieldRules::le_bytes_data_length(max_length).len()
+    //     } else {
+    //         if bytes.is_empty() {
+    //             0
+    //         } else if bytes.len() < DEFAULT_FIELD_LENGTH_LE_BYTES {
+    //             1
+    //         } else {
+    //             DEFAULT_FIELD_LENGTH_LE_BYTES
+    //             // // DEFAULT_FIELD_LENGTH_LE_BYTES
+    //             // match bytes[0..DEFAULT_FIELD_LENGTH_LE_BYTES] {
+    //             //     [0, 0, 0, _] => 4,
+    //             //     [0, 0, _, _] => 3,
+    //             //     [0, _, _, _] => 2,
+    //             //     _ => 1,
+    //             // }
+    //         }
+    //     }
+    // }
 }
 
 #[derive(Debug, Clone)]
@@ -640,6 +713,7 @@ pub enum FieldType<'a> {
     I32,
     I64,
     I128,
+    ISIZE,
     F32,
     F64,
     String,
@@ -648,6 +722,10 @@ pub enum FieldType<'a> {
     Bytes,
     Bool,
     Struct(StructName<'a>),
+    HashMap {
+        key: Box<FieldType<'a>>,
+        value: Box<FieldType<'a>>,
+    },
 }
 
 impl<'a> FieldType<'a> {
@@ -660,6 +738,21 @@ impl<'a> FieldType<'a> {
                 true
             }
             _ => false,
+        }
+    }
+
+    pub fn hashmap_from_str(input: &str) -> FieldType {
+        let mut key_value = input.split('<').collect::<Vec<&str>>();
+        key_value[1] = key_value[1].trim_end_matches('>');
+        let key = key_value[1].split(',').collect::<Vec<&str>>()[0].trim();
+        let value = key_value[1].split(',').collect::<Vec<&str>>()[1].trim();
+
+        // println!("Key: {:?}", key);
+        // println!("Value: {:?}", value);
+
+        FieldType::HashMap {
+            key: Box::new(FieldType::from(key)),
+            value: Box::new(FieldType::from(value)),
         }
     }
 }
@@ -680,17 +773,21 @@ impl<'a> From<&'a str> for FieldType<'a> {
             "i32" => FieldType::I32,
             "i64" => FieldType::I64,
             "i128" => FieldType::I128,
+            "isize" => FieldType::ISIZE,
             "f32" => FieldType::F32,
             "f64" => FieldType::F64,
             "String" => FieldType::String,
-            "& 'static str" => FieldType::Str,
-            "& 'a str" => FieldType::Str,
-            "&str" => FieldType::Str,
+            s if s.contains("str") => FieldType::Str,
+            // "& 'static str" => FieldType::Str,
+            // "& 'a str" => FieldType::Str,
+            // "&str" => FieldType::Str,
             "Vec<u8>" => FieldType::Bytes,
-            "&[u8]" => FieldType::Bytes,
-            "[u8]" => FieldType::Bytes,
+            s if s.contains("[u8]") => FieldType::Bytes,
+            // "&[u8]" => FieldType::Bytes,
+            // "[u8]" => FieldType::Bytes,
             "Vec" => FieldType::Vec,
             "bool" => FieldType::Bool,
+            s if s.contains("HashMap") => FieldType::hashmap_from_str(s),
             s => FieldType::Struct(s),
         }
     }
@@ -710,14 +807,15 @@ impl<'a> From<u8> for FieldType<'a> {
             8 => FieldType::I32,
             9 => FieldType::I64,
             10 => FieldType::I128,
-            11 => FieldType::F32,
-            12 => FieldType::F64,
-            13 => FieldType::String,
-            14 => FieldType::Str,
-            15 => FieldType::Vec,
-            16 => FieldType::Bytes,
-            17 => FieldType::Bool,
-            18 => FieldType::Struct(""),
+            11 => FieldType::ISIZE,
+            12 => FieldType::F32,
+            13 => FieldType::F64,
+            14 => FieldType::String,
+            15 => FieldType::Str,
+            16 => FieldType::Vec,
+            17 => FieldType::Bytes,
+            18 => FieldType::Bool,
+            19 => FieldType::Struct(""),
             _ => todo!("Handle unknown field type"),
         }
     }
@@ -737,14 +835,16 @@ impl<'a> Into<u8> for FieldType<'a> {
             FieldType::I32 => 8,
             FieldType::I64 => 9,
             FieldType::I128 => 10,
-            FieldType::F32 => 11,
-            FieldType::F64 => 12,
-            FieldType::String => 13,
-            FieldType::Str => 14,
-            FieldType::Vec => 15,
-            FieldType::Bytes => 16,
-            FieldType::Bool => 17,
-            FieldType::Struct(_) => 18,
+            FieldType::ISIZE => 11,
+            FieldType::F32 => 12,
+            FieldType::F64 => 13,
+            FieldType::String => 14,
+            FieldType::Str => 15,
+            FieldType::Vec => 16,
+            FieldType::Bytes => 17,
+            FieldType::Bool => 18,
+            FieldType::Struct(_) => 19,
+            FieldType::HashMap { key: _, value: _ } => 20, //
         }
     }
 }

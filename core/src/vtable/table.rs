@@ -119,6 +119,23 @@ impl<'a> VTable<'a> {
         vtable_struct.field_by_index(&field_index)
     }
 
+    // Return the field from the current item index and field index
+    pub fn get_item_field_by_index(
+        &self,
+        current_item_index: VTableItemIndex,
+        current_field_index: FieldIndex,
+    ) -> Result<&VTableField, Error> {
+        self.items
+            .inner()
+            .get(current_item_index as usize)
+            .ok_or(Error::ItemNotFound)
+            .and_then(|vtable_item| match vtable_item {
+                VTableItem::Struct(vtable_struct) => vtable_struct
+                    .field_by_index(&current_field_index)
+                    .map_err(|_| Error::FieldNotFound),
+            })
+    }
+
     pub fn parse_raw_values(&self, input: &[u8]) -> Result<DocBufRawValues, Error> {
         let mut current_item_index = self.num_items;
         let mut current_field_index = 0;
@@ -129,16 +146,23 @@ impl<'a> VTable<'a> {
         while !input.is_empty() {
             match self.get_struct_field_by_index(current_item_index, current_field_index) {
                 Ok(field) => {
+                    println!("Decoding Field: {:?}", field);
+
                     let field_data = field.decode(&mut input)?;
 
                     if !field_data.is_empty() {
-                        data.insert_value(current_item_index, current_field_index, field_data);
+                        data.insert(current_item_index, current_field_index, field_data);
                     }
 
                     current_field_index += 1;
                 }
                 _ => {
                     if current_item_index == 0 {
+                        println!("Data: {:?}", data);
+                        println!("Input: {:?}", input);
+                        println!("Current Item Index: {}", current_item_index);
+                        println!("Current Field Index: {}", current_field_index);
+
                         // If we've reached the end of the items
                         // and the data is not empty, we must
                         // return an error.
@@ -150,6 +174,8 @@ impl<'a> VTable<'a> {
                 }
             }
         }
+
+        println!("Data: {:?}", data);
 
         Ok(data)
     }
@@ -163,12 +189,7 @@ impl DocBufRawValues {
         DocBufRawValues(HashMap::new())
     }
 
-    pub fn insert_value(
-        &mut self,
-        item_index: VTableItemIndex,
-        field_index: FieldIndex,
-        value: Vec<u8>,
-    ) {
+    pub fn insert(&mut self, item_index: VTableItemIndex, field_index: FieldIndex, value: Vec<u8>) {
         self.0
             .entry(item_index)
             .or_insert_with(HashMap::new)

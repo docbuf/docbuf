@@ -60,6 +60,14 @@ impl<'a> DocBufSerializer<'a> {
         })
     }
 
+    // Encode the beginning of a map structure
+    pub fn encode_map_start(&mut self, num_entries: usize) -> Result<()> {
+        self.current_field()?
+            .encode_map_start(num_entries, &mut self.output)?;
+
+        Ok(())
+    }
+
     // Encode the &str data into the output vector
     pub fn encode_str(&mut self, data: &str) -> Result<()> {
         self.current_field()?.encode_str(data, &mut self.output)?;
@@ -98,6 +106,8 @@ where
     let mut serializer = DocBufSerializer::new(T::vtable()?, buffer);
 
     value.serialize(&mut serializer)?;
+
+    // println!("Buffer: {:?}", buffer);
 
     Ok(())
 }
@@ -187,6 +197,8 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
+        // println!("serialize_str: {}", v);
+
         self.encode_str(v)
     }
 
@@ -288,8 +300,11 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
         unimplemented!("serialize_tuple_variant")
     }
 
-    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        unimplemented!("serialize_map")
+    fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
+        // Encode the number of entries in the map
+        self.encode_map_start(len.unwrap_or_default())?;
+
+        Ok(self)
     }
 
     fn serialize_struct_variant(
@@ -371,22 +386,59 @@ impl<'a, 'b> serde::ser::SerializeMap for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_key<T: ?Sized>(&mut self, _key: &T) -> Result<()>
+    fn serialize_key<T: ?Sized>(&mut self, key: &T) -> Result<()>
     where
         T: Serialize,
     {
-        unimplemented!("serialize_key")
+        Ok(())
+        // unimplemented!("serialize_key")
     }
 
     fn serialize_value<T: ?Sized>(&mut self, _value: &T) -> Result<()>
     where
         T: Serialize,
     {
-        unimplemented!("serialize_value")
+        Ok(())
+        // unimplemented!("serialize_value")
+    }
+
+    fn serialize_entry<K: ?Sized, V: ?Sized>(&mut self, key: &K, value: &V) -> Result<()>
+    where
+        K: Serialize,
+        V: Serialize,
+    {
+        key.serialize(&mut **self)?;
+
+        value.serialize(&mut **self)?;
+
+        // match &field.field_type {
+        //     FieldType::HashMap { key, value } => key.serialize(self),
+        //     _ => {
+        //         return Err(Error::Serde(format!(
+        //             "Expected a map, found a {:?}",
+        //             field.field_type
+        //         )));
+        //     }
+        // }
+
+        // println!("Field: {:?}", field);
+
+        // unimplemented!("serialize_entry")
+
+        // let key = key.serialize(KeySerializer)?;
+        // let value = value.serialize(ValueSerializer)?;
+
+        // self.current_field = Some(Field {
+        //     field_index: self.current_field_index,
+        //     key,
+        //     value,
+        // });
+
+        Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
-        unimplemented!("end")
+        Ok(())
     }
 }
 

@@ -12,6 +12,8 @@ pub enum Error {
     FieldLengthMismatch,
     #[error("Field Rules Length: {0}")]
     FieldRulesLength(String),
+    #[error("Item Not Found")]
+    ItemNotFound,
     #[error("Struct Not Found")]
     StructNotFound,
     #[error("Field Not Found")]
@@ -36,6 +38,8 @@ pub enum Error {
     VTableBorrowMut,
     #[error("Unable to parse encoded data")]
     FailedToParseData,
+    #[error("Map entries exceeds max: {0}")]
+    MapEntriesExceedsMax(usize),
 }
 
 #[cfg(test)]

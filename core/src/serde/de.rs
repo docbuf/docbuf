@@ -10,6 +10,8 @@ pub struct DocBufDeserializer {
     raw_values: DocBufRawValues,
     current_item_index: VTableItemIndex,
     current_field_index: FieldIndex,
+    current_item: Option<&'static VTableItem<'static>>,
+    current_field: Option<&'static VTableField<'static>>,
 }
 
 impl<'de> DocBufDeserializer {
@@ -22,11 +24,25 @@ impl<'de> DocBufDeserializer {
             raw_values,
             current_item_index: 0,
             current_field_index: 0,
+            current_item: None,
+            current_field: None,
         })
     }
 
     pub fn increment_current_field_index(&mut self) {
         self.current_field_index += 1;
+    }
+
+    // Return the current field or find it in the vtable based on the
+    // current_item_index and current_field_index
+    pub fn current_field(&self) -> Result<&'static VTableField<'static>> {
+        Ok(match self.current_field {
+            Some(field) => field,
+            _ => self
+                .vtable
+                .struct_by_index(self.current_item_index)?
+                .field_by_index(&self.current_field_index)?,
+        })
     }
 }
 
@@ -57,9 +73,13 @@ impl<'de> serde::de::MapAccess<'de> for &mut DocBufDeserializer {
     where
         K: DeserializeSeed<'de>,
     {
+        // println!("Deserializing Map Key");
+
         let field_data = self
             .raw_values
             .get(self.current_item_index, self.current_field_index);
+
+        // println!("Field Data: {:?}", field_data);
 
         if field_data.is_none() {
             // Field cannot be found for current struct and field indexes
@@ -73,9 +93,23 @@ impl<'de> serde::de::MapAccess<'de> for &mut DocBufDeserializer {
     where
         V: DeserializeSeed<'de>,
     {
-        self.raw_values
-            .remove(self.current_item_index, self.current_field_index)
-            .unwrap_or_default();
+        // println!("Deserializing Map Value");
+
+        // let mut data = self
+        //     .raw_values
+        //     .remove(self.current_item_index, self.current_field_index)
+        //     .unwrap_or_default();
+
+        // println!("Data: {:?}", data);
+
+        // // Drain the key and value from the data
+        // let key_length = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        // data.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES + key_length as usize);
+
+        // if !data.is_empty() {
+        //     self.raw_values
+        //         .insert(self.current_item_index, self.current_field_index, data);
+        // }
 
         seed.deserialize(&mut **self)
     }
@@ -391,34 +425,100 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     where
         V: Visitor<'de>,
     {
-        let field_data = self
+        let mut data = self
             .raw_values
             .remove(self.current_item_index, self.current_field_index)
             .unwrap_or_default();
 
-        let value = std::str::from_utf8(&field_data)?;
+        let field = self.current_field()?;
 
-        // Increment the field index
-        self.increment_current_field_index();
+        let value = match &field.field_type {
+            FieldType::String => {
+                // Increment the field index
+                self.increment_current_field_index();
 
-        visitor.visit_str(value)
+                String::from_utf8(data)?
+            }
+            FieldType::HashMap { key, value } => {
+                let length = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+
+                let value = String::from_utf8(
+                    data[DEFAULT_FIELD_LENGTH_LE_BYTES..DEFAULT_FIELD_LENGTH_LE_BYTES + length]
+                        .to_owned(),
+                )?;
+
+                data.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES + length);
+
+                if !data.is_empty() {
+                    self.raw_values
+                        .insert(self.current_item_index, self.current_field_index, data);
+                }
+
+                value
+            }
+            _ => {
+                return Err(Error::Serde(format!(
+                    "Expected field type to be String or HashMap, found {:?}",
+                    field.field_type
+                )))
+            }
+        };
+
+        visitor.visit_str(&value)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        let field_data = self
+        let field = self.current_field()?;
+
+        let mut field_data = self
             .raw_values
             .remove(self.current_item_index, self.current_field_index)
             .unwrap_or_default();
 
-        let value = std::str::from_utf8(&field_data)?;
+        let value = match &field.field_type {
+            FieldType::String => {
+                // Increment the field index
+                self.increment_current_field_index();
 
-        // Increment the field index
-        self.increment_current_field_index();
+                String::from_utf8(field_data)?
+            }
+            FieldType::HashMap { key, value } => {
+                let length = u32::from_le_bytes([
+                    field_data[0],
+                    field_data[1],
+                    field_data[2],
+                    field_data[3],
+                ]) as usize;
 
-        visitor.visit_string(value.to_string())
+                let value = &field_data
+                    [DEFAULT_FIELD_LENGTH_LE_BYTES..DEFAULT_FIELD_LENGTH_LE_BYTES + length];
+
+                let value = String::from_utf8(value.to_owned())?;
+
+                field_data.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES + length);
+
+                if !field_data.is_empty() {
+                    self.raw_values.insert(
+                        self.current_item_index,
+                        self.current_field_index,
+                        field_data,
+                    );
+                }
+
+                value
+            }
+            _ => {
+                return Err(Error::Serde(format!(
+                    "Expected field type to be String or HashMap, found {:?}",
+                    field.field_type
+                )))
+            }
+        };
+
+        visitor.visit_string(value)
     }
 
     fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value>

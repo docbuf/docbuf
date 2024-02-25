@@ -22,6 +22,7 @@ trait TestHarness<'de>:
         buffer: &'a mut Vec<u8>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         self.to_docbuf(buffer)?;
+
         let bincode_bytes = bincode::serialize(&self)?;
         let json_bytes = serde_json::to_vec(&self)?;
 
@@ -47,6 +48,8 @@ trait TestHarness<'de>:
         buffer: &'a mut Vec<u8>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         self.to_docbuf(buffer)?;
+
+        println!("Buffer: {:?}", buffer);
 
         Self::from_docbuf(buffer)?;
 
