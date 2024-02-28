@@ -26,7 +26,7 @@ impl<'a> VTableStruct<'a> {
         field_name: &'a str,
         field_rules: FieldRules,
     ) {
-        println!("Adding Field: {}", field_name);
+        // println!("Adding Field: {}", field_name);
 
         let field_index = self.num_fields;
 

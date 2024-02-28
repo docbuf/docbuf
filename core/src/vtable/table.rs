@@ -171,26 +171,26 @@ impl<'a> VTable<'a> {
                 .is_some()
             {
                 current_field_index += 1;
-                println!("Skipping visited field");
+                // println!("Skipping visited field");
                 continue;
             }
 
-            println!("Input: {:?}", input);
+            // println!("Input: {:?}", input);
 
-            println!("Current Item Index: {}", current_item_index);
-            println!("Current Field Index: {}", current_field_index);
-            println!("Number of Items: {}", self.num_items);
-            println!("Has Descended: {}", has_descended);
+            // println!("Current Item Index: {}", current_item_index);
+            // println!("Current Field Index: {}", current_field_index);
+            // println!("Number of Items: {}", self.num_items);
+            // println!("Has Descended: {}", has_descended);
 
             let item = self.item_by_index(current_item_index)?;
 
-            println!("Item: {:?}", item);
+            // println!("Item: {:?}", item);
 
             match item {
                 VTableItem::Struct(s) => {
                     match s.field_by_index(&current_field_index) {
                         Ok(field) => {
-                            println!("Decoding Field: {:?}", field);
+                            // println!("Decoding Field: {:?}", field);
 
                             // Memoize the current item and field index
                             has_visited.insert((current_item_index, current_field_index));
@@ -219,22 +219,22 @@ impl<'a> VTable<'a> {
                             };
 
                             if current_field_index < s.num_fields - 1 {
-                                println!("Incrementing Field Index");
+                                // println!("Incrementing Field Index");
                                 current_field_index += 1;
                             } else if current_item_index > 0 && !has_descended {
-                                println!("Decrementing Item Index");
+                                // println!("Decrementing Item Index");
                                 current_item_index -= 1;
                                 current_field_index = 0;
                             } else if current_item_index == 0
                                 && current_field_index == s.num_fields - 1
                                 && !has_descended
                             {
-                                println!("Has Descended");
+                                // println!("Has Descended");
                                 has_descended = true;
                                 current_item_index += 1;
                                 current_field_index = 0;
                             } else if current_item_index < self.num_items - 1 && has_descended {
-                                println!("Incrementing Item Index");
+                                // println!("Incrementing Item Index");
                                 current_item_index += 1;
                                 current_field_index = 0;
                             } else {
@@ -282,7 +282,7 @@ impl<'a> VTable<'a> {
             };
         }
 
-        println!("Data: {:?}", data);
+        // println!("Data: {:?}", data);
 
         // unimplemented!("parse raw values");
 

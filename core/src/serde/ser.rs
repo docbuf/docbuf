@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::vtable::*;
 use crate::{error::Error, traits::DocBuf, Result};
@@ -24,6 +24,7 @@ use crate::{error::Error, traits::DocBuf, Result};
 //     }
 // }
 
+#[derive(Debug)]
 pub struct DocBufSerializer<'a> {
     pub vtable: &'static VTable<'static>,
     pub output: &'a mut Vec<u8>,
@@ -55,7 +56,7 @@ impl<'a> DocBufSerializer<'a> {
     // Return the current field or find it in the vtable based on the
     // current_item_index and current_field_index
     pub fn current_field(&self) -> Result<&'static VTableField<'static>> {
-        println!("current_field: {:?}", self.current_field);
+        // println!("current_field: {:?}", self.current_field);
 
         Ok(match self.current_field {
             Some(field) => field,
@@ -218,7 +219,17 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
-        self.encode_numeric(NumericValue::U8(v))
+        let field = self.current_field()?;
+
+        // Shortcut validation for byte arrays
+        if let FieldType::Bytes = field.field_type {
+            self.output.push(v);
+
+            Ok(())
+        } else {
+            // Encode the u8 as a numeric value
+            self.encode_numeric(NumericValue::U8(v))
+        }
     }
 
     fn serialize_u16(self, v: u16) -> Result<Self::Ok> {
@@ -467,8 +478,8 @@ impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
     where
         T: Serialize,
     {
-        println!("Serialize field: {}", name);
-        println!("Current Item: {:?}", self.current_item);
+        // println!("Serialize field: {}", name);
+        // println!("Current Item: {:?}", self.current_item);
 
         let field = match self.current_item {
             Some(VTableItem::Struct(field_struct)) => match field_struct.field_by_name(name) {
@@ -499,7 +510,7 @@ impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
             {
                 Ok(field) => field,
                 Err(_) => {
-                    println!("Searching previous item");
+                    // println!("Searching previous item");
 
                     // Try to search previous item
                     match self

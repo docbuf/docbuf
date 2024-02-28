@@ -258,7 +258,7 @@ impl<'a> VTableField<'a> {
         // Remove the field data from the bytes and return it
         let field_data = bytes.drain(0..length);
 
-        println!("Field Data: {:?}", field_data);
+        // println!("Field Data: {:?}", field_data);
 
         Ok(field_data.collect())
     }

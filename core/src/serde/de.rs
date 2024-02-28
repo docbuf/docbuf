@@ -69,11 +69,11 @@ impl<'de> DocBufDeserializer {
                 }
 
                 if self.current_field_index < s.num_fields - 1 {
-                    println!("Incrementing Field Index");
+                    // println!("Incrementing Field Index");
                     self.current_field_index += 1;
                     self.current_field = None;
                 } else if self.current_item_index > 0 && !self.has_descended {
-                    println!("Decrementing Item Index");
+                    // println!("Decrementing Item Index");
                     self.current_item_index -= 1;
                     self.current_field_index = 0;
                     self.current_field = None;
@@ -82,14 +82,14 @@ impl<'de> DocBufDeserializer {
                     && self.current_field_index == s.num_fields - 1
                     && !self.has_descended
                 {
-                    println!("Has Descended");
+                    // println!("Has Descended");
                     self.has_descended = true;
                     self.current_item_index += 1;
                     self.current_field_index = 0;
                     self.current_item = None;
                     self.current_field = None;
                 } else if self.current_item_index < num_items - 1 && self.has_descended {
-                    println!("Incrementing Item Index");
+                    // println!("Incrementing Item Index");
                     self.current_item_index += 1;
                     self.current_field_index = 0;
                     self.current_item = None;
@@ -107,7 +107,7 @@ impl<'de> DocBufDeserializer {
             .has_visited
             .contains(&(self.current_item_index, self.current_field_index))
         {
-            println!("Has visited");
+            // println!("Has visited");
             self.next_field()?;
         }
 
@@ -213,7 +213,7 @@ impl<'de> SeqAccess<'de> for DocBufDeserializer {
     where
         T: DeserializeSeed<'de>,
     {
-        println!("Next element Seed");
+        // println!("Next element Seed");
 
         if self.raw_values.is_empty() {
             return Ok(None);
@@ -356,11 +356,11 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     where
         V: Visitor<'de>,
     {
-        println!("Raw Values: {:?}", self.raw_values);
-        println!(
-            "Current Item Index: {}, Current Field Index: {}",
-            self.current_item_index, self.current_field_index
-        );
+        // println!("Raw Values: {:?}", self.raw_values);
+        // println!(
+        //     "Current Item Index: {}, Current Field Index: {}",
+        //     self.current_item_index, self.current_field_index
+        // );
 
         let mut field_data = self
             .raw_values
@@ -557,7 +557,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
                 // Increment the field index
                 self.next_field()?;
 
-                println!("deserialize string: Data: {:?}", data);
+                // println!("deserialize string: Data: {:?}", data);
 
                 String::from_utf8(data)?
             }
@@ -568,7 +568,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
                     [DEFAULT_FIELD_LENGTH_LE_BYTES..DEFAULT_FIELD_LENGTH_LE_BYTES + length]
                     .to_owned();
 
-                println!("Value: {:?}", value);
+                // println!("Value: {:?}", value);
 
                 let value = String::from_utf8(value)?;
 
@@ -609,14 +609,14 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
             .remove(self.current_item_index, self.current_field_index)
             .unwrap_or_default();
 
-        println!("Field: {:?}", field);
+        // println!("Field: {:?}", field);
 
         let value = match &field.field_type {
             FieldType::String => {
                 // Increment the field index
                 self.next_field()?;
 
-                println!("Data: {:?}", field_data);
+                // println!("Data: {:?}", field_data);
 
                 String::from_utf8(field_data)?
             }
@@ -631,7 +631,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
                 let value = &field_data
                     [DEFAULT_FIELD_LENGTH_LE_BYTES..DEFAULT_FIELD_LENGTH_LE_BYTES + length];
 
-                println!("HashMap Data: {:?}", value);
+                // println!("HashMap Data: {:?}", value);
 
                 let value = String::from_utf8(value.to_owned())?;
 

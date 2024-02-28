@@ -52,6 +52,7 @@ pub struct Metadata {
         min_length = 0;
     }]
     pub description: String,
+    pub signature: Signature,
     pub u8_data: u8,
     pub u16_data: u16,
     pub u32_data: u32,
@@ -67,7 +68,6 @@ pub struct Metadata {
     pub i128_data: i128,
     pub isize_data: isize,
     pub hash_map_data: std::collections::HashMap<String, String>,
-    pub signature: Signature,
     pub byte_data: Vec<u8>,
 }
 
@@ -119,6 +119,9 @@ impl Document {
             footer: ["0"; 32].concat(),
             metadata: Metadata {
                 description: ["0"; 512].concat(),
+                signature: Signature {
+                    signature: ["0"; 32].concat(),
+                },
                 u8_data: u8::MAX,
                 u16_data: u16::MAX,
                 u32_data: u32::MAX,
@@ -141,9 +144,6 @@ impl Document {
                     map.insert("3".to_string(), ["3"; 500].concat());
                     map
                 })(),
-                signature: Signature {
-                    signature: ["0"; 32].concat(),
-                },
                 byte_data: (|| {
                     let mut data = Vec::with_capacity(255);
                     for i in 0..255 {

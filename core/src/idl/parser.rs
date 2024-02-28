@@ -140,7 +140,7 @@ impl Parser {
 
         while let Some(token) = tokens.next() {
             if let Ok(token) = token {
-                println!("Parsing Current Token: {:?}", token);
+                // println!("Parsing Current Token: {:?}", token);
 
                 match token {
                     Token::Pragma => {}
@@ -162,7 +162,7 @@ impl Parser {
                         }
                     }
                     Token::Import => {
-                        println!("Import: {:?}", tokens.slice());
+                        // println!("Import: {:?}", tokens.slice());
                     }
                     Token::StatementEnd => {
                         match parser.context.previous_token {
@@ -172,7 +172,7 @@ impl Parser {
                                 parser.pragma = Self::pragma(&source[span])?;
                             }
                             Some(Token::Module) => {
-                                println!("Module: {:?}", tokens.slice());
+                                // println!("Module: {:?}", tokens.slice());
                                 let span =
                                     parser.context.previous_span.end + 1..tokens.span().start;
                                 parser.module_name = source[span].trim().to_string();
