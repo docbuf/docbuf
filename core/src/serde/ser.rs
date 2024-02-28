@@ -29,8 +29,10 @@ pub struct DocBufSerializer<'a> {
     pub output: &'a mut Vec<u8>,
     pub current_item_index: u8,
     pub current_field_index: u8,
+    pub previous_item_index: u8,
     pub current_item: Option<&'static VTableItem<'static>>,
     pub current_field: Option<&'static VTableField<'static>>,
+    pub previous_item: Option<&'static VTableItem<'static>>,
 }
 
 impl<'a> DocBufSerializer<'a> {
@@ -43,14 +45,18 @@ impl<'a> DocBufSerializer<'a> {
             output,
             current_item_index: 0,
             current_field_index: 0,
+            previous_item_index: 0,
             current_item: None,
             current_field: None,
+            previous_item: None,
         }
     }
 
     // Return the current field or find it in the vtable based on the
     // current_item_index and current_field_index
     pub fn current_field(&self) -> Result<&'static VTableField<'static>> {
+        println!("current_field: {:?}", self.current_field);
+
         Ok(match self.current_field {
             Some(field) => field,
             _ => self
@@ -58,6 +64,13 @@ impl<'a> DocBufSerializer<'a> {
                 .struct_by_index(self.current_item_index)?
                 .field_by_index(&self.current_field_index)?,
         })
+    }
+
+    pub fn encode_array_start(&mut self, num_elements: usize) -> Result<()> {
+        self.current_field()?
+            .encode_array_start(num_elements, &mut self.output)?;
+
+        Ok(())
     }
 
     // Encode the beginning of a map structure
@@ -142,7 +155,9 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
             match vtable_item {
                 VTableItem::Struct(vtable_struct) => {
                     if vtable_struct.struct_name == name {
+                        self.previous_item_index = self.current_item_index;
                         self.current_item_index = vtable_struct.item_index;
+                        self.previous_item = self.current_item;
                         self.current_item = Some(vtable_item);
                         return Ok(self);
                     }
@@ -274,8 +289,10 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
         unimplemented!("serialize_newtype_variant")
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        unimplemented!("serialize_seq")
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        self.encode_array_start(len.unwrap_or_default())?;
+
+        Ok(self)
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
@@ -322,15 +339,15 @@ impl<'a, 'b> serde::ser::SerializeSeq for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_element<T: ?Sized>(&mut self, _value: &T) -> Result<()>
+    fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
         T: Serialize,
     {
-        unimplemented!("serialize_element")
+        value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<Self::Ok> {
-        unimplemented!("end")
+        Ok(())
     }
 }
 
@@ -450,12 +467,61 @@ impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
     where
         T: Serialize,
     {
+        println!("Serialize field: {}", name);
+        println!("Current Item: {:?}", self.current_item);
+
         let field = match self.current_item {
-            Some(VTableItem::Struct(field_struct)) => field_struct.field_by_name(name)?,
-            _ => self
+            Some(VTableItem::Struct(field_struct)) => match field_struct.field_by_name(name) {
+                Ok(field) => field,
+                Err(_) => match self.previous_item {
+                    Some(VTableItem::Struct(field_struct)) => {
+                        match field_struct.field_by_name(name) {
+                            Ok(field) => {
+                                self.current_item = self.previous_item;
+                                self.current_item_index = self.previous_item_index;
+                                self.previous_item = None;
+                                field
+                            }
+                            Err(_) => {
+                                return Err(Error::Serde(format!("Field not found: {}", name)));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(Error::Serde(format!("Field not found: {}", name)));
+                    }
+                },
+            },
+            _ => match self
                 .vtable
                 .struct_by_index(self.current_item_index)?
-                .field_by_name(name)?,
+                .field_by_name(name)
+            {
+                Ok(field) => field,
+                Err(_) => {
+                    println!("Searching previous item");
+
+                    // Try to search previous item
+                    match self
+                        .vtable
+                        .struct_by_index(self.previous_item_index)?
+                        .field_by_name(name)
+                    {
+                        Ok(field) => {
+                            // Reset the current item to the parent struct
+                            self.current_item = self.previous_item;
+                            self.current_item_index = self.previous_item_index;
+                            self.previous_item = None;
+
+                            // Return the field
+                            field
+                        }
+                        Err(_) => {
+                            return Err(Error::Serde(format!("Field not found: {}", name)));
+                        }
+                    }
+                }
+            },
         };
 
         self.current_field_index = field.field_index;

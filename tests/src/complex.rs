@@ -62,6 +62,7 @@ pub struct Metadata {
     pub isize_data: isize,
     pub hash_map_data: std::collections::HashMap<String, String>,
     pub signature: Signature,
+    pub byte_data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
@@ -108,6 +109,13 @@ impl Document {
                 signature: Signature {
                     signature: ["0"; 32].concat(),
                 },
+                byte_data: (|| {
+                    let mut data = Vec::with_capacity(255);
+                    for i in 0..255 {
+                        data.push(i as u8);
+                    }
+                    data
+                })(),
             },
         }
     }

@@ -84,6 +84,26 @@ impl<'a> VTableField<'a> {
         }
     }
 
+    pub fn encode_array_start(
+        &self,
+        num_elements: usize,
+        output: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        // println!("Num elements: {}", num_elements);
+
+        // Check if the num elements exceeds the maximum allowed.
+        if num_elements >= MAX_FIELD_SIZE {
+            return Err(Error::ArrayElementsExceedsMax(num_elements));
+        }
+
+        // Only encode the first three bytes
+        output.extend_from_slice(&(num_elements as u32).to_le_bytes());
+
+        // println!("encode_array_start OUTPUT: {:?}", output);
+
+        Ok(())
+    }
+
     pub fn encode_map_start(&self, num_entries: usize, output: &mut Vec<u8>) -> Result<(), Error> {
         // println!("Num entries: {}", num_entries);
 
@@ -145,7 +165,7 @@ impl<'a> VTableField<'a> {
 
     pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
         Ok(match &self.field_type {
-            FieldType::String => self.decode_string_data(bytes)?,
+            FieldType::String | FieldType::Bytes => self.decode_variable_length(bytes)?,
             FieldType::U8 | FieldType::I8 => {
                 let field_data = bytes.drain(0..1);
 
@@ -207,7 +227,7 @@ impl<'a> VTableField<'a> {
 
         // multiply the entries by 2 to account for the key and value pairs
         for _ in 0..num_entries * 2 {
-            let field_data_length = self.decode_field_data_length(bytes);
+            let length = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
 
             // Remove the encoded length from the bytes
             // bytes.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES);
@@ -215,7 +235,7 @@ impl<'a> VTableField<'a> {
             // Remove the field data from the bytes and return it
             output.extend_from_slice(
                 bytes
-                    .drain(0..field_data_length + DEFAULT_FIELD_LENGTH_LE_BYTES)
+                    .drain(0..length + DEFAULT_FIELD_LENGTH_LE_BYTES)
                     .as_slice(),
             );
 
@@ -229,25 +249,18 @@ impl<'a> VTableField<'a> {
 
     // Decodes the field data from the bytes input.
     // Returns the raw field data and removes the field data from the bytes, including its length.
-    pub fn decode_string_data(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
-        let field_data_length = self.decode_field_data_length(bytes);
+    pub fn decode_variable_length(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
+        let length = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
 
         // Remove the encoded length from the bytes
         bytes.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES);
+
         // Remove the field data from the bytes and return it
-        let field_data = bytes.drain(0..field_data_length);
+        let field_data = bytes.drain(0..length);
+
+        println!("Field Data: {:?}", field_data);
 
         Ok(field_data.collect())
-    }
-
-    pub fn decode_field_data_length(&self, bytes: &[u8]) -> usize {
-        let mut field_length = [0u8; DEFAULT_FIELD_LENGTH_LE_BYTES];
-
-        for byte in 0..DEFAULT_FIELD_LENGTH_LE_BYTES {
-            field_length[byte] = bytes[byte];
-        }
-
-        u32::from_le_bytes(field_length) as usize
     }
 
     pub fn validate_str(&self, data: &str) -> Result<(), Error> {
@@ -781,7 +794,7 @@ impl<'a> From<&'a str> for FieldType<'a> {
             // "& 'static str" => FieldType::Str,
             // "& 'a str" => FieldType::Str,
             // "&str" => FieldType::Str,
-            "Vec<u8>" => FieldType::Bytes,
+            "Vec < u8 >" => FieldType::Bytes,
             s if s.contains("[u8]") => FieldType::Bytes,
             // "&[u8]" => FieldType::Bytes,
             // "[u8]" => FieldType::Bytes,

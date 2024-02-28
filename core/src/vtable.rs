@@ -40,6 +40,8 @@ pub enum Error {
     FailedToParseData,
     #[error("Map entries exceeds max: {0}")]
     MapEntriesExceedsMax(usize),
+    #[error("Array length exceeds max: {0}")]
+    ArrayElementsExceedsMax(usize),
 }
 
 #[cfg(test)]

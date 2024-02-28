@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::*;
 
@@ -137,45 +137,133 @@ impl<'a> VTable<'a> {
     }
 
     pub fn parse_raw_values(&self, input: &[u8]) -> Result<DocBufRawValues, Error> {
-        let mut current_item_index = self.num_items;
+        let mut current_item_index = self.num_items - 1;
         let mut current_field_index = 0;
+        let mut has_descended = false;
+        let mut has_visited = HashSet::<(VTableItemIndex, FieldIndex)>::new();
 
         let mut data = DocBufRawValues::new();
         let mut input = input.to_vec();
 
         while !input.is_empty() {
-            match self.get_struct_field_by_index(current_item_index, current_field_index) {
-                Ok(field) => {
-                    println!("Decoding Field: {:?}", field);
-
-                    let field_data = field.decode(&mut input)?;
-
-                    if !field_data.is_empty() {
-                        data.insert(current_item_index, current_field_index, field_data);
-                    }
-
-                    current_field_index += 1;
-                }
-                _ => {
-                    if current_item_index == 0 {
-                        println!("Data: {:?}", data);
-                        println!("Input: {:?}", input);
-                        println!("Current Item Index: {}", current_item_index);
-                        println!("Current Field Index: {}", current_field_index);
-
-                        // If we've reached the end of the items
-                        // and the data is not empty, we must
-                        // return an error.
-                        return Err(Error::FailedToParseData);
-                    }
-
-                    current_item_index -= 1;
-                    current_field_index = 0;
-                }
+            // Skip if the field has already been visited.
+            if has_visited
+                .get(&(current_item_index, current_field_index))
+                .is_some()
+            {
+                current_field_index += 1;
+                println!("Skipping visited field");
+                continue;
             }
+
+            println!("Input: {:?}", input);
+
+            println!("Current Item Index: {}", current_item_index);
+            println!("Current Field Index: {}", current_field_index);
+            println!("Number of Items: {}", self.num_items);
+            println!("Has Descended: {}", has_descended);
+
+            let item = self
+                .items
+                .inner()
+                .get(current_item_index as usize)
+                .ok_or(Error::ItemNotFound)?;
+
+            match item {
+                VTableItem::Struct(s) => {
+                    match s.field_by_index(&current_field_index) {
+                        Ok(field) => {
+                            println!("Decoding Field: {:?}", field);
+
+                            // If the field type is a struct, decrement the current item index
+                            // to descend into the struct. reset the field index to 0.
+                            match field.field_type {
+                                FieldType::Struct(_) => {
+                                    // if !has_descended {
+                                    //     current_item_index -= 1;
+                                    //     current_field_index = 0;
+                                    //     continue;
+                                    // }
+                                }
+                                _ => {
+                                    let field_data = field.decode(&mut input)?;
+
+                                    if !field_data.is_empty() {
+                                        data.insert(
+                                            current_item_index,
+                                            current_field_index,
+                                            field_data,
+                                        );
+                                    }
+                                }
+                            };
+
+                            // Memoize the current item and field index
+                            has_visited.insert((current_item_index, current_field_index));
+
+                            if current_field_index < s.num_fields - 1 {
+                                current_field_index += 1;
+                            } else if current_item_index > 0 && !has_descended {
+                                current_item_index -= 1;
+                                current_field_index = 0;
+                            } else if current_item_index == 0
+                                && current_field_index == s.num_fields - 1
+                                && !has_descended
+                            {
+                                has_descended = true;
+                                current_item_index += 1;
+                                current_field_index = 0;
+                            } else if current_item_index < self.num_items - 1 && has_descended {
+                                current_item_index += 1;
+                                current_field_index = 0;
+                            } else {
+                                return Err(Error::FailedToParseData);
+                            }
+                        }
+                        _ => {
+                            unimplemented!("error handle parse data");
+
+                            if current_item_index == self.num_items - 1
+                                && current_field_index == s.num_fields - 1
+                                && has_descended
+                            {
+                                println!("Data: {:?}", data);
+                                println!("Input: {:?}", input);
+
+                                // If we've reached the end of the items
+                                // and the data is not empty, we must
+                                // return an error.
+                                return Err(Error::FailedToParseData);
+                            }
+
+                            if !has_descended
+                                && current_item_index == 0
+                                && current_field_index == s.num_fields
+                            {
+                                // reached the end of the items
+                                has_descended = true;
+                                // begin to "resurface" to the top of the vtable
+                                current_item_index += 1;
+                                // Reset the field index to 0
+                                current_field_index = 0;
+                            }
+
+                            if has_descended {
+                                current_item_index += 1;
+                            } else {
+                                current_item_index -= 1;
+                            }
+
+                            current_field_index = 0;
+                        }
+                    }
+                }
+            };
         }
 
         println!("Data: {:?}", data);
+
+        unimplemented!("parse raw values");
 
         Ok(data)
     }

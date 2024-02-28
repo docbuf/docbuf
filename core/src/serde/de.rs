@@ -82,6 +82,8 @@ impl<'de> serde::de::MapAccess<'de> for &mut DocBufDeserializer {
         // println!("Field Data: {:?}", field_data);
 
         if field_data.is_none() {
+            self.increment_current_field_index();
+
             // Field cannot be found for current struct and field indexes
             return Ok(None);
         }
@@ -437,18 +439,24 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
                 // Increment the field index
                 self.increment_current_field_index();
 
+                println!("deserialize string: Data: {:?}", data);
+
                 String::from_utf8(data)?
             }
             FieldType::HashMap { key, value } => {
                 let length = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
 
-                let value = String::from_utf8(
-                    data[DEFAULT_FIELD_LENGTH_LE_BYTES..DEFAULT_FIELD_LENGTH_LE_BYTES + length]
-                        .to_owned(),
-                )?;
+                let value = data
+                    [DEFAULT_FIELD_LENGTH_LE_BYTES..DEFAULT_FIELD_LENGTH_LE_BYTES + length]
+                    .to_owned();
+
+                println!("Value: {:?}", value);
+
+                let value = String::from_utf8(value)?;
 
                 data.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES + length);
 
+                // Re-add the remainder data to the raw values
                 if !data.is_empty() {
                     self.raw_values
                         .insert(self.current_item_index, self.current_field_index, data);
@@ -471,17 +479,26 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
     where
         V: Visitor<'de>,
     {
-        let field = self.current_field()?;
+        // let field = self.current_field()?;
+
+        let field = self
+            .vtable
+            .struct_by_index(self.current_item_index)?
+            .field_by_index(&self.current_field_index)?;
 
         let mut field_data = self
             .raw_values
             .remove(self.current_item_index, self.current_field_index)
             .unwrap_or_default();
 
+        println!("Field: {:?}", field);
+
         let value = match &field.field_type {
             FieldType::String => {
                 // Increment the field index
                 self.increment_current_field_index();
+
+                println!("Data: {:?}", field_data);
 
                 String::from_utf8(field_data)?
             }
@@ -495,6 +512,8 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
 
                 let value = &field_data
                     [DEFAULT_FIELD_LENGTH_LE_BYTES..DEFAULT_FIELD_LENGTH_LE_BYTES + length];
+
+                println!("HashMap Data: {:?}", value);
 
                 let value = String::from_utf8(value.to_owned())?;
 
