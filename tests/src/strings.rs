@@ -35,11 +35,20 @@ fn test_regex_lowercase() -> Result<(), Box<dyn std::error::Error>> {
     #[docbuf {}]
     pub struct Document {
         #[docbuf {
-                // Check only for lowercase letters with three characters
-                regex = r"^[a-z]{3}$";
-            }]
+            // Check only for lowercase letters with three characters
+            regex = r"^[a-z]{3}$";
+        }]
         pub string_value: String,
     }
+
+    // Implement Eq and Partial Eq for the Document struct
+    impl PartialEq for Document {
+        fn eq(&self, other: &Self) -> bool {
+            self.string_value == other.string_value
+        }
+    }
+
+    impl Eq for Document {}
 
     impl SetTestValues for Document {
         fn set_string_value(&mut self, value: String) {
@@ -83,6 +92,14 @@ fn test_regex_uuid() -> Result<(), Box<dyn std::error::Error>> {
         pub string_value: String,
     }
 
+    impl Eq for Document {}
+
+    impl PartialEq for Document {
+        fn eq(&self, other: &Self) -> bool {
+            self.string_value == other.string_value
+        }
+    }
+
     impl SetTestValues for Document {
         fn set_string_value(&mut self, value: String) {
             self.string_value = value;
@@ -115,10 +132,18 @@ fn test_min_max_length() -> Result<(), Box<dyn std::error::Error>> {
     #[docbuf {}]
     pub struct Document {
         #[docbuf {
-                min_length = 4;
-                max_length = 100;
-            }]
+            min_length = 4;
+            max_length = 100;
+        }]
         pub string_value: String,
+    }
+
+    impl Eq for Document {}
+
+    impl PartialEq for Document {
+        fn eq(&self, other: &Self) -> bool {
+            self.string_value == other.string_value
+        }
     }
 
     impl SetTestValues for Document {
@@ -149,9 +174,17 @@ fn test_length() -> Result<(), Box<dyn std::error::Error>> {
     #[docbuf {}]
     pub struct Document {
         #[docbuf {
-                length = 5;
-            }]
+            length = 5;
+        }]
         pub string_value: String,
+    }
+
+    impl Eq for Document {}
+
+    impl PartialEq for Document {
+        fn eq(&self, other: &Self) -> bool {
+            self.string_value == other.string_value
+        }
     }
 
     impl SetTestValues for Document {

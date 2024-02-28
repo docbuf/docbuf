@@ -37,6 +37,12 @@ pub struct Document {
     pub metadata: Metadata,
 }
 
+impl PartialEq for Document {
+    fn eq(&self, other: &Self) -> bool {
+        self.body == other.body && self.footer == other.footer && self.metadata == other.metadata
+    }
+}
+
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
     sign = true;
@@ -65,6 +71,29 @@ pub struct Metadata {
     pub byte_data: Vec<u8>,
 }
 
+impl PartialEq for Metadata {
+    fn eq(&self, other: &Self) -> bool {
+        self.description == other.description
+            && self.u8_data == other.u8_data
+            && self.u16_data == other.u16_data
+            && self.u32_data == other.u32_data
+            && self.u64_data == other.u64_data
+            && self.u128_data == other.u128_data
+            && self.usize_data == other.usize_data
+            && self.f32_data == other.f32_data
+            && self.f64_data == other.f64_data
+            && self.i8_data == other.i8_data
+            && self.i16_data == other.i16_data
+            && self.i32_data == other.i32_data
+            && self.i64_data == other.i64_data
+            && self.i128_data == other.i128_data
+            && self.isize_data == other.isize_data
+            && self.hash_map_data == other.hash_map_data
+            && self.signature == other.signature
+            && self.byte_data == other.byte_data
+    }
+}
+
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
     // sign = "true";
@@ -74,6 +103,12 @@ pub struct Signature {
         length = 32;
     }]
     pub signature: String,
+}
+
+impl PartialEq for Signature {
+    fn eq(&self, other: &Self) -> bool {
+        self.signature == other.signature
+    }
 }
 
 impl Document {
@@ -150,6 +185,8 @@ fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
     let doc = Document::from_docbuf(&mut buffer)?;
 
     println!("doc: {:?}", doc);
+
+    // assert_eq!(document, doc);
 
     Ok(())
 }
