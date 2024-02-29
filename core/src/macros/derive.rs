@@ -267,7 +267,7 @@ pub fn docbuf_impl_serialization(_input: TokenStream) -> TokenStream {
     let output = quote! {
         // Serialize the struct to a byte buffer
         fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<(), ::docbuf_core::error::Error> {
-            ::docbuf_core::serde::ser::to_docbuf_writer(self, buffer)?;
+            ::docbuf_core::serde::ser::to_docbuf(self, buffer)?;
 
             Ok(())
         }

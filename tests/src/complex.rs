@@ -102,7 +102,7 @@ pub struct Signature {
     #[docbuf {
         length = 32;
     }]
-    pub signature: String,
+    pub signature: [u8; 32],
 }
 
 impl PartialEq for Signature {
@@ -114,14 +114,12 @@ impl PartialEq for Signature {
 impl Document {
     pub fn dummy() -> Self {
         Self {
-            title: ["0"; 64].concat(),
-            body: ["0"; 2048].concat(),
-            footer: ["0"; 32].concat(),
+            title: ["T"; 64].concat(),
+            body: ["B"; 2048].concat(),
+            footer: ["F"; 32].concat(),
             metadata: Metadata {
-                description: ["0"; 512].concat(),
-                signature: Signature {
-                    signature: ["0"; 32].concat(),
-                },
+                description: ["D"; 512].concat(),
+                signature: Signature { signature: [0; 32] },
                 u8_data: u8::MAX,
                 u16_data: u16::MAX,
                 u32_data: u32::MAX,
@@ -207,6 +205,17 @@ fn test_serialize_hash_map() -> Result<(), docbuf_core::error::Error> {
     println!("Buffer length: {:?}", buffer.len());
 
     //
+
+    Ok(())
+}
+
+#[test]
+fn test_write_file() -> Result<(), docbuf_core::error::Error> {
+    let doc = Document::dummy();
+
+    let path_to_file = "test.dbuf"; // relative to current working directory
+
+    doc.to_file(path_to_file)?;
 
     Ok(())
 }

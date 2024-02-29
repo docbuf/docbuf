@@ -796,6 +796,7 @@ impl<'a> From<&'a str> for FieldType<'a> {
             // "&str" => FieldType::Str,
             "Vec < u8 >" => FieldType::Bytes,
             s if s.contains("[u8]") => FieldType::Bytes,
+            s if s.contains("[u8 ; ") => FieldType::Bytes,
             // "&[u8]" => FieldType::Bytes,
             // "[u8]" => FieldType::Bytes,
             "Vec" => FieldType::Vec,

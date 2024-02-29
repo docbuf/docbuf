@@ -709,11 +709,11 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
         Ok(value)
     }
 
-    fn deserialize_tuple<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
+    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_tuple")
+        visitor.visit_seq(self)
     }
 
     fn deserialize_tuple_struct<V>(

@@ -27,6 +27,21 @@ pub trait DocBuf {
     /// Convert the document to a document buffer
     fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<(), error::Error>;
 
+    /// Write the document buffer to a file
+    #[cfg(feature = "std")]
+    fn to_file(&self, path: impl Into<std::path::PathBuf>) -> Result<(), error::Error> {
+        use std::fs::File;
+        use std::io::Write;
+
+        let mut buffer = Vec::with_capacity(1024);
+        self.to_docbuf(&mut buffer)?;
+
+        let mut file = File::create(path.into())?;
+        file.write_all(&buffer)?;
+
+        Ok(())
+    }
+
     /// Convert the document buffer to a document
     fn from_docbuf(buf: &[u8]) -> Result<Self::DocBuf, error::Error>;
 

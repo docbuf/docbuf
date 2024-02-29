@@ -9,7 +9,8 @@ readme = "../README.md"
 repository = "https://github.com/docbuf/docbuf"
 
 [features]
-default = ["full"]
+default = ["std", "full"]
+std = []
 full = ["crypto", "macros", "validate"]
 crypto = ["digest", "ed25519", "sha2"]
 macros = ["proc-macro2", "quote", "syn"]
