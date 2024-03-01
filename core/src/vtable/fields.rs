@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::{cmp::Ordering, str::FromStr};
 
 pub use super::*;
@@ -22,56 +23,30 @@ pub const U16_MAX: usize = u16::MAX as usize;
 pub const U32_MAX: usize = u32::MAX as usize;
 pub const U64_MAX: usize = u64::MAX as usize;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LeBytes {
-    U8([u8; 1]),
-    U16([u8; 2]),
-    U32([u8; 4]),
-    U64([u8; 8]),
-}
-
-impl LeBytes {
-    pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            LeBytes::U8(bytes) => bytes,
-            LeBytes::U16(bytes) => bytes,
-            LeBytes::U32(bytes) => bytes,
-            LeBytes::U64(bytes) => bytes,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            LeBytes::U8(_) => 1,
-            LeBytes::U16(_) => 2,
-            LeBytes::U32(_) => 4,
-            LeBytes::U64(_) => 8,
-        }
-    }
-}
-
-pub type FieldIndex = u8;
-// pub type FieldNameAsBytes<'a> = &'a [u8];
-pub type FieldName<'a> = &'a str;
+// Field Offset range of the resulting document buffer bytes
+pub type VTableFieldOffset = (VTableItemIndex, VTableFieldIndex, Range<usize>);
+pub type VTableFieldOffsets = Vec<VTableFieldOffset>;
+pub type VTableFieldIndex = u8;
+pub type VTableFieldName<'a> = &'a str;
 
 #[derive(Debug, Clone)]
 pub struct VTableField<'a> {
-    // The index of the vtable item this field belongs to
+    /// The index of the vtable item this field belongs to
     pub item_index: VTableItemIndex,
-    // The type of the field
-    pub field_type: FieldType<'a>,
-    pub field_index: FieldIndex,
-    pub field_name: FieldName<'a>,
-    pub field_rules: FieldRules,
+    /// The type of the field
+    pub field_type: VTableFieldType<'a>,
+    pub field_index: VTableFieldIndex,
+    pub field_name: VTableFieldName<'a>,
+    pub field_rules: VTableFieldRules,
 }
 
 impl<'a> VTableField<'a> {
     pub fn new(
         item_index: VTableItemIndex,
-        field_type: FieldType<'a>,
-        field_index: FieldIndex,
-        field_name: FieldName<'a>,
-        field_rules: FieldRules,
+        field_type: VTableFieldType<'a>,
+        field_index: VTableFieldIndex,
+        field_name: VTableFieldName<'a>,
+        field_rules: VTableFieldRules,
     ) -> Self {
         // println!("Field Rules: {:?}", field_rules);
 
@@ -82,6 +57,26 @@ impl<'a> VTableField<'a> {
             field_name,
             field_rules,
         }
+    }
+
+    pub fn encode_array_start(
+        &self,
+        num_elements: usize,
+        output: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        // println!("Num elements: {}", num_elements);
+
+        // Check if the num elements exceeds the maximum allowed.
+        if num_elements >= MAX_FIELD_SIZE {
+            return Err(Error::ArrayElementsExceedsMax(num_elements));
+        }
+
+        // Only encode the first three bytes
+        output.extend_from_slice(&(num_elements as u32).to_le_bytes());
+
+        // println!("encode_array_start OUTPUT: {:?}", output);
+
+        Ok(())
     }
 
     pub fn encode_map_start(&self, num_entries: usize, output: &mut Vec<u8>) -> Result<(), Error> {
@@ -106,17 +101,13 @@ impl<'a> VTableField<'a> {
         self.validate_str(field_data)?;
 
         match &self.field_type {
-            FieldType::String => {
+            VTableFieldType::String => {
                 // prepend length to the field data
-                let length = (field_data.len() as u32).to_le_bytes();
-
-                output.extend_from_slice(length.as_slice());
+                output.extend_from_slice(&(field_data.len() as u32).to_le_bytes());
             }
-            FieldType::HashMap { key, value } => {
+            VTableFieldType::HashMap { key, value } => {
                 // prepend length to the field data
-                let length = (field_data.len() as u32).to_le_bytes();
-
-                output.extend_from_slice(length.as_slice());
+                output.extend_from_slice(&(field_data.len() as u32).to_le_bytes());
             }
             _ => {}
         };
@@ -145,39 +136,41 @@ impl<'a> VTableField<'a> {
 
     pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
         Ok(match &self.field_type {
-            FieldType::String => self.decode_string_data(bytes)?,
-            FieldType::U8 | FieldType::I8 => {
+            VTableFieldType::String | VTableFieldType::Bytes => {
+                self.decode_variable_length(bytes)?
+            }
+            VTableFieldType::U8 | VTableFieldType::I8 => {
                 let field_data = bytes.drain(0..1);
 
                 field_data.collect()
             }
-            FieldType::U16 | FieldType::I16 => {
+            VTableFieldType::U16 | VTableFieldType::I16 => {
                 let field_data = bytes.drain(0..2);
 
                 field_data.collect()
             }
-            FieldType::U32 | FieldType::F32 | FieldType::I32 => {
+            VTableFieldType::U32 | VTableFieldType::F32 | VTableFieldType::I32 => {
                 let field_data = bytes.drain(0..4);
 
                 field_data.collect()
             }
-            FieldType::U64
-            | FieldType::F64
-            | FieldType::USIZE
-            | FieldType::I64
-            | FieldType::ISIZE => {
+            VTableFieldType::U64
+            | VTableFieldType::F64
+            | VTableFieldType::USIZE
+            | VTableFieldType::I64
+            | VTableFieldType::ISIZE => {
                 let field_data = bytes.drain(0..8);
 
                 field_data.collect()
             }
-            FieldType::U128 | FieldType::I128 => {
+            VTableFieldType::U128 | VTableFieldType::I128 => {
                 let field_data = bytes.drain(0..16);
 
                 field_data.collect()
             }
 
-            FieldType::Struct(_) => Vec::new(),
-            FieldType::HashMap { key, value } => self.decode_map_data(key, value, bytes)?,
+            VTableFieldType::Struct(_) => Vec::new(),
+            VTableFieldType::HashMap { key, value } => self.decode_map_data(key, value, bytes)?,
             _ => {
                 unimplemented!("Decode Field Type: {:#?}", self.field_type);
             }
@@ -186,8 +179,8 @@ impl<'a> VTableField<'a> {
 
     pub fn decode_map_data(
         &self,
-        key: &Box<FieldType>,
-        value: &Box<FieldType>,
+        key: &Box<VTableFieldType>,
+        value: &Box<VTableFieldType>,
         bytes: &mut Vec<u8>,
     ) -> Result<Vec<u8>, Error> {
         // println!("Decoding Map Data");
@@ -207,7 +200,7 @@ impl<'a> VTableField<'a> {
 
         // multiply the entries by 2 to account for the key and value pairs
         for _ in 0..num_entries * 2 {
-            let field_data_length = self.decode_field_data_length(bytes);
+            let length = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
 
             // Remove the encoded length from the bytes
             // bytes.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES);
@@ -215,7 +208,7 @@ impl<'a> VTableField<'a> {
             // Remove the field data from the bytes and return it
             output.extend_from_slice(
                 bytes
-                    .drain(0..field_data_length + DEFAULT_FIELD_LENGTH_LE_BYTES)
+                    .drain(0..length + DEFAULT_FIELD_LENGTH_LE_BYTES)
                     .as_slice(),
             );
 
@@ -229,25 +222,18 @@ impl<'a> VTableField<'a> {
 
     // Decodes the field data from the bytes input.
     // Returns the raw field data and removes the field data from the bytes, including its length.
-    pub fn decode_string_data(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
-        let field_data_length = self.decode_field_data_length(bytes);
+    pub fn decode_variable_length(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
+        let length = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
 
         // Remove the encoded length from the bytes
         bytes.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES);
+
         // Remove the field data from the bytes and return it
-        let field_data = bytes.drain(0..field_data_length);
+        let field_data = bytes.drain(0..length);
+
+        // println!("Field Data: {:?}", field_data);
 
         Ok(field_data.collect())
-    }
-
-    pub fn decode_field_data_length(&self, bytes: &[u8]) -> usize {
-        let mut field_length = [0u8; DEFAULT_FIELD_LENGTH_LE_BYTES];
-
-        for byte in 0..DEFAULT_FIELD_LENGTH_LE_BYTES {
-            field_length[byte] = bytes[byte];
-        }
-
-        u32::from_le_bytes(field_length) as usize
     }
 
     pub fn validate_str(&self, data: &str) -> Result<(), Error> {
@@ -257,7 +243,7 @@ impl<'a> VTableField<'a> {
         }
 
         match self.field_type {
-            FieldType::String => {
+            VTableFieldType::String => {
                 // Check for string length rules
                 self.field_rules.check_data_length_field_rules(data.len())?;
 
@@ -505,7 +491,7 @@ impl PartialOrd for NumericValue {
 
 /// Optional rules for a field
 #[derive(Debug, Clone)]
-pub struct FieldRules {
+pub struct VTableFieldRules {
     pub ignore: bool,
     pub max_value: Option<NumericValue>,
     pub min_value: Option<NumericValue>,
@@ -518,7 +504,7 @@ pub struct FieldRules {
     pub sign: bool,
 }
 
-impl FieldRules {
+impl VTableFieldRules {
     pub fn new() -> Self {
         Self {
             ignore: false,
@@ -701,7 +687,7 @@ impl FieldRules {
 }
 
 #[derive(Debug, Clone)]
-pub enum FieldType<'a> {
+pub enum VTableFieldType<'a> {
     U8,
     U16,
     U32,
@@ -723,17 +709,47 @@ pub enum FieldType<'a> {
     Bool,
     Struct(StructName<'a>),
     HashMap {
-        key: Box<FieldType<'a>>,
-        value: Box<FieldType<'a>>,
+        key: Box<VTableFieldType<'a>>,
+        value: Box<VTableFieldType<'a>>,
     },
 }
 
-impl<'a> FieldType<'a> {
+impl<'a> std::fmt::Display for VTableFieldType<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VTableFieldType::U8 => write!(f, "u8"),
+            VTableFieldType::U16 => write!(f, "u16"),
+            VTableFieldType::U32 => write!(f, "u32"),
+            VTableFieldType::U64 => write!(f, "u64"),
+            VTableFieldType::U128 => write!(f, "u128"),
+            VTableFieldType::USIZE => write!(f, "usize"),
+            VTableFieldType::I8 => write!(f, "i8"),
+            VTableFieldType::I16 => write!(f, "i16"),
+            VTableFieldType::I32 => write!(f, "i32"),
+            VTableFieldType::I64 => write!(f, "i64"),
+            VTableFieldType::I128 => write!(f, "i128"),
+            VTableFieldType::ISIZE => write!(f, "isize"),
+            VTableFieldType::F32 => write!(f, "f32"),
+            VTableFieldType::F64 => write!(f, "f64"),
+            VTableFieldType::String => write!(f, "String"),
+            VTableFieldType::Str => write!(f, "&str"),
+            VTableFieldType::Vec => write!(f, "Vec"),
+            VTableFieldType::Bytes => write!(f, "Bytes"),
+            VTableFieldType::Bool => write!(f, "bool"),
+            VTableFieldType::Struct(s) => write!(f, "{}", s),
+            VTableFieldType::HashMap { key, value } => {
+                write!(f, "HashMap<{}, {}>", key, value)
+            }
+        }
+    }
+}
+
+impl<'a> VTableFieldType<'a> {
     pub fn is_struct(field_type: impl TryInto<Self>) -> bool {
         // println!("Checking if field type is a struct");
 
         match field_type.try_into() {
-            Ok(FieldType::Struct(_)) => {
+            Ok(VTableFieldType::Struct(_)) => {
                 // println!("Field Type is a struct: {:?}", s);
                 true
             }
@@ -741,7 +757,7 @@ impl<'a> FieldType<'a> {
         }
     }
 
-    pub fn hashmap_from_str(input: &str) -> FieldType {
+    pub fn hashmap_from_str(input: &str) -> VTableFieldType {
         let mut key_value = input.split('<').collect::<Vec<&str>>();
         key_value[1] = key_value[1].trim_end_matches('>');
         let key = key_value[1].split(',').collect::<Vec<&str>>()[0].trim();
@@ -750,101 +766,102 @@ impl<'a> FieldType<'a> {
         // println!("Key: {:?}", key);
         // println!("Value: {:?}", value);
 
-        FieldType::HashMap {
-            key: Box::new(FieldType::from(key)),
-            value: Box::new(FieldType::from(value)),
+        VTableFieldType::HashMap {
+            key: Box::new(VTableFieldType::from(key)),
+            value: Box::new(VTableFieldType::from(value)),
         }
     }
 }
 
-impl<'a> From<&'a str> for FieldType<'a> {
+impl<'a> From<&'a str> for VTableFieldType<'a> {
     fn from(s: &'a str) -> Self {
         // println!("Converting string to field type: {:?}", s);
 
         match s {
-            "u8" => FieldType::U8,
-            "u16" => FieldType::U16,
-            "u32" => FieldType::U32,
-            "u64" => FieldType::U64,
-            "u128" => FieldType::U128,
-            "usize" => FieldType::USIZE,
-            "i8" => FieldType::I8,
-            "i16" => FieldType::I16,
-            "i32" => FieldType::I32,
-            "i64" => FieldType::I64,
-            "i128" => FieldType::I128,
-            "isize" => FieldType::ISIZE,
-            "f32" => FieldType::F32,
-            "f64" => FieldType::F64,
-            "String" => FieldType::String,
-            s if s.contains("str") => FieldType::Str,
-            // "& 'static str" => FieldType::Str,
-            // "& 'a str" => FieldType::Str,
-            // "&str" => FieldType::Str,
-            "Vec<u8>" => FieldType::Bytes,
-            s if s.contains("[u8]") => FieldType::Bytes,
-            // "&[u8]" => FieldType::Bytes,
-            // "[u8]" => FieldType::Bytes,
-            "Vec" => FieldType::Vec,
-            "bool" => FieldType::Bool,
-            s if s.contains("HashMap") => FieldType::hashmap_from_str(s),
-            s => FieldType::Struct(s),
+            "u8" => VTableFieldType::U8,
+            "u16" => VTableFieldType::U16,
+            "u32" => VTableFieldType::U32,
+            "u64" => VTableFieldType::U64,
+            "u128" => VTableFieldType::U128,
+            "usize" => VTableFieldType::USIZE,
+            "i8" => VTableFieldType::I8,
+            "i16" => VTableFieldType::I16,
+            "i32" => VTableFieldType::I32,
+            "i64" => VTableFieldType::I64,
+            "i128" => VTableFieldType::I128,
+            "isize" => VTableFieldType::ISIZE,
+            "f32" => VTableFieldType::F32,
+            "f64" => VTableFieldType::F64,
+            "String" => VTableFieldType::String,
+            s if s.contains("str") => VTableFieldType::Str,
+            // "& 'static str" => VTableFieldType::Str,
+            // "& 'a str" => VTableFieldType::Str,
+            // "&str" => VTableFieldType::Str,
+            "Vec < u8 >" => VTableFieldType::Bytes,
+            s if s.contains("[u8]") => VTableFieldType::Bytes,
+            s if s.contains("[u8 ; ") => VTableFieldType::Bytes,
+            // "&[u8]" => VTableFieldType::Bytes,
+            // "[u8]" => VTableFieldType::Bytes,
+            s if s.contains("Vec") => VTableFieldType::Vec,
+            "bool" => VTableFieldType::Bool,
+            s if s.contains("HashMap") => VTableFieldType::hashmap_from_str(s),
+            s => VTableFieldType::Struct(s),
         }
     }
 }
 
-impl<'a> From<u8> for FieldType<'a> {
+impl<'a> From<u8> for VTableFieldType<'a> {
     fn from(byte: u8) -> Self {
         match byte {
-            0 => FieldType::U8,
-            1 => FieldType::U16,
-            2 => FieldType::U32,
-            3 => FieldType::U64,
-            4 => FieldType::U128,
-            5 => FieldType::USIZE,
-            6 => FieldType::I8,
-            7 => FieldType::I16,
-            8 => FieldType::I32,
-            9 => FieldType::I64,
-            10 => FieldType::I128,
-            11 => FieldType::ISIZE,
-            12 => FieldType::F32,
-            13 => FieldType::F64,
-            14 => FieldType::String,
-            15 => FieldType::Str,
-            16 => FieldType::Vec,
-            17 => FieldType::Bytes,
-            18 => FieldType::Bool,
-            19 => FieldType::Struct(""),
+            0 => VTableFieldType::U8,
+            1 => VTableFieldType::U16,
+            2 => VTableFieldType::U32,
+            3 => VTableFieldType::U64,
+            4 => VTableFieldType::U128,
+            5 => VTableFieldType::USIZE,
+            6 => VTableFieldType::I8,
+            7 => VTableFieldType::I16,
+            8 => VTableFieldType::I32,
+            9 => VTableFieldType::I64,
+            10 => VTableFieldType::I128,
+            11 => VTableFieldType::ISIZE,
+            12 => VTableFieldType::F32,
+            13 => VTableFieldType::F64,
+            14 => VTableFieldType::String,
+            15 => VTableFieldType::Str,
+            16 => VTableFieldType::Vec,
+            17 => VTableFieldType::Bytes,
+            18 => VTableFieldType::Bool,
+            19 => VTableFieldType::Struct(""),
             _ => todo!("Handle unknown field type"),
         }
     }
 }
 
-impl<'a> Into<u8> for FieldType<'a> {
+impl<'a> Into<u8> for VTableFieldType<'a> {
     fn into(self) -> u8 {
         match self {
-            FieldType::U8 => 0,
-            FieldType::U16 => 1,
-            FieldType::U32 => 2,
-            FieldType::U64 => 3,
-            FieldType::U128 => 4,
-            FieldType::USIZE => 5,
-            FieldType::I8 => 6,
-            FieldType::I16 => 7,
-            FieldType::I32 => 8,
-            FieldType::I64 => 9,
-            FieldType::I128 => 10,
-            FieldType::ISIZE => 11,
-            FieldType::F32 => 12,
-            FieldType::F64 => 13,
-            FieldType::String => 14,
-            FieldType::Str => 15,
-            FieldType::Vec => 16,
-            FieldType::Bytes => 17,
-            FieldType::Bool => 18,
-            FieldType::Struct(_) => 19,
-            FieldType::HashMap { key: _, value: _ } => 20, //
+            VTableFieldType::U8 => 0,
+            VTableFieldType::U16 => 1,
+            VTableFieldType::U32 => 2,
+            VTableFieldType::U64 => 3,
+            VTableFieldType::U128 => 4,
+            VTableFieldType::USIZE => 5,
+            VTableFieldType::I8 => 6,
+            VTableFieldType::I16 => 7,
+            VTableFieldType::I32 => 8,
+            VTableFieldType::I64 => 9,
+            VTableFieldType::I128 => 10,
+            VTableFieldType::ISIZE => 11,
+            VTableFieldType::F32 => 12,
+            VTableFieldType::F64 => 13,
+            VTableFieldType::String => 14,
+            VTableFieldType::Str => 15,
+            VTableFieldType::Vec => 16,
+            VTableFieldType::Bytes => 17,
+            VTableFieldType::Bool => 18,
+            VTableFieldType::Struct(_) => 19,
+            VTableFieldType::HashMap { key: _, value: _ } => 20, //
         }
     }
 }

@@ -13,7 +13,14 @@ pub mod test_deps {
 }
 
 trait TestHarness<'de>:
-    DocBuf + SetTestValues + Default + Deserialize<'de> + Serialize + std::fmt::Debug
+    DocBuf
+    + SetTestValues
+    + Default
+    + Deserialize<'de>
+    + Serialize
+    + std::fmt::Debug
+    + PartialEq
+    + Clone
 {
     /// Assert the serialization size of the document buffer is less than or equal to the size of the
     /// bincode and JSON serialization.
@@ -47,11 +54,22 @@ trait TestHarness<'de>:
         self,
         buffer: &'a mut Vec<u8>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        // Serialize
         self.to_docbuf(buffer)?;
 
-        println!("Buffer: {:?}", buffer);
+        let docbuf = buffer.clone();
 
-        Self::from_docbuf(buffer)?;
+        // deserialize
+        let doc = Self::from_docbuf(buffer)?;
+
+        // Serialize again
+        doc.to_docbuf(buffer)?;
+
+        // Check the buffer length is the same.
+        // It is not guaranteed that all the bytes are the same, but the length should be the same.
+        // The bytes may be different because of the way the document buffer is serialized, namely the hashmap
+        // keys are serialized in a different order.
+        assert_eq!(docbuf.len(), buffer.len());
 
         Ok(self)
     }

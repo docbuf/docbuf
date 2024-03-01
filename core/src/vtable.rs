@@ -1,7 +1,9 @@
+mod bufmap;
 mod fields;
 mod structs;
 mod table;
 
+pub use bufmap::*;
 pub use fields::*;
 pub use structs::*;
 pub use table::*;
@@ -40,6 +42,10 @@ pub enum Error {
     FailedToParseData,
     #[error("Map entries exceeds max: {0}")]
     MapEntriesExceedsMax(usize),
+    #[error("Array length exceeds max: {0}")]
+    ArrayElementsExceedsMax(usize),
+    #[error("Invalid memory map field type, expected: {0}")]
+    InvalidMemoryMapFieldType(String),
 }
 
 #[cfg(test)]

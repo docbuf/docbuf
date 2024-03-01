@@ -70,6 +70,14 @@ pub struct U8Value {
     pub u8_value: u8,
 }
 
+impl PartialEq for U8Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.u8_value == other.u8_value
+    }
+}
+
+impl Eq for U8Value {}
+
 impl std::fmt::Display for U8Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "U8Value {{ u8_value: {} }}", self.u8_value)
@@ -108,6 +116,14 @@ pub struct U16Value {
     }]
     pub u16_value: u16,
 }
+
+impl PartialEq for U16Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.u16_value == other.u16_value
+    }
+}
+
+impl Eq for U16Value {}
 
 impl std::fmt::Display for U16Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

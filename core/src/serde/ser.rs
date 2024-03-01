@@ -3,39 +3,22 @@ use serde::Serialize;
 use crate::vtable::*;
 use crate::{error::Error, traits::DocBuf, Result};
 
-// pub enum Output {
-//     Static(&'static mut Vec<u8>),
-//     Dynamic(Vec<u8>),
-// }
-
-// impl Output {
-//     pub fn as_mut(&mut self) -> &mut Vec<u8> {
-//         match self {
-//             Output::Static(buf) => *buf,
-//             Output::Dynamic(buf) => buf,
-//         }
-//     }
-
-//     pub fn to_vec(self) -> Vec<u8> {
-//         match self {
-//             Output::Static(buf) => buf.to_vec(),
-//             Output::Dynamic(buf) => buf,
-//         }
-//     }
-// }
-
+#[derive(Debug)]
 pub struct DocBufSerializer<'a> {
     pub vtable: &'static VTable<'static>,
     pub output: &'a mut Vec<u8>,
     pub current_item_index: u8,
     pub current_field_index: u8,
+    pub previous_item_index: u8,
     pub current_item: Option<&'static VTableItem<'static>>,
     pub current_field: Option<&'static VTableField<'static>>,
+    pub previous_item: Option<&'static VTableItem<'static>>,
+    pub offsets: VTableFieldOffsets,
 }
 
 impl<'a> DocBufSerializer<'a> {
     pub fn new(vtable: &'static VTable, output: &'a mut Vec<u8>) -> Self {
-        // Clear the output buffer
+        // Clear the output buffer before serializing
         output.clear();
 
         Self {
@@ -43,8 +26,11 @@ impl<'a> DocBufSerializer<'a> {
             output,
             current_item_index: 0,
             current_field_index: 0,
+            previous_item_index: 0,
             current_item: None,
             current_field: None,
+            previous_item: None,
+            offsets: VTableFieldOffsets::with_capacity(vtable.num_items as usize),
         }
     }
 
@@ -58,6 +44,13 @@ impl<'a> DocBufSerializer<'a> {
                 .struct_by_index(self.current_item_index)?
                 .field_by_index(&self.current_field_index)?,
         })
+    }
+
+    pub fn encode_array_start(&mut self, num_elements: usize) -> Result<()> {
+        self.current_field()?
+            .encode_array_start(num_elements, &mut self.output)?;
+
+        Ok(())
     }
 
     // Encode the beginning of a map structure
@@ -77,8 +70,14 @@ impl<'a> DocBufSerializer<'a> {
 
     // Encode the &str data into the output vector
     pub fn encode_numeric(&mut self, data: NumericValue) -> Result<()> {
+        // let start = self.output.len();
+
         self.current_field()?
             .encode_numeric_value(data, &mut self.output)?;
+
+        // let end = self.output.len();
+
+        // println!("Numeric Encoding: {:?}", &self.output[start..end]);
 
         Ok(())
     }
@@ -99,7 +98,7 @@ impl<'a> DocBufSerializer<'a> {
     // }
 }
 
-pub fn to_docbuf_writer<T>(value: &T, buffer: &mut Vec<u8>) -> Result<()>
+pub fn to_docbuf<T>(value: &T, buffer: &mut Vec<u8>) -> Result<VTableFieldOffsets>
 where
     T: Serialize + DocBuf + std::fmt::Debug,
 {
@@ -109,20 +108,8 @@ where
 
     // println!("Buffer: {:?}", buffer);
 
-    Ok(())
+    Ok(serializer.offsets)
 }
-
-// pub fn to_docbuf<T>(value: &T) -> Result<Vec<u8>>
-// where
-//     T: Serialize + DocBuf + std::fmt::Debug,
-// {
-//     let mut serializer =
-//         DocBufSerializer::new(T::vtable()?, Output::Dynamic(Vec::with_capacity(1024)));
-
-//     value.serialize(&mut serializer)?;
-
-//     Ok(serializer.output.to_vec())
-// }
 
 impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     type Ok = ();
@@ -142,7 +129,9 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
             match vtable_item {
                 VTableItem::Struct(vtable_struct) => {
                     if vtable_struct.struct_name == name {
+                        self.previous_item_index = self.current_item_index;
                         self.current_item_index = vtable_struct.item_index;
+                        self.previous_item = self.current_item;
                         self.current_item = Some(vtable_item);
                         return Ok(self);
                     }
@@ -169,7 +158,9 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok> {
-        self.encode_numeric(NumericValue::F32(v))
+        self.encode_numeric(NumericValue::F32(v))?;
+
+        Ok(())
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok> {
@@ -203,7 +194,17 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
-        self.encode_numeric(NumericValue::U8(v))
+        let field = self.current_field()?;
+
+        // Shortcut validation for byte arrays
+        if let VTableFieldType::Bytes = field.field_type {
+            self.output.push(v);
+
+            Ok(())
+        } else {
+            // Encode the u8 as a numeric value
+            self.encode_numeric(NumericValue::U8(v))
+        }
     }
 
     fn serialize_u16(self, v: u16) -> Result<Self::Ok> {
@@ -274,12 +275,21 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
         unimplemented!("serialize_newtype_variant")
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        unimplemented!("serialize_seq")
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        self.encode_array_start(len.unwrap_or_default())?;
+
+        Ok(self)
     }
 
-    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
-        unimplemented!("serialize_tuple")
+    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
+        let field = self.current_field()?;
+
+        if let VTableFieldType::Bytes = field.field_type {
+            // Encode the length of the byte array
+            self.encode_array_start(len)?;
+        }
+
+        Ok(self)
     }
 
     fn serialize_tuple_struct(
@@ -322,15 +332,15 @@ impl<'a, 'b> serde::ser::SerializeSeq for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_element<T: ?Sized>(&mut self, _value: &T) -> Result<()>
+    fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
         T: Serialize,
     {
-        unimplemented!("serialize_element")
+        value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<Self::Ok> {
-        unimplemented!("end")
+        Ok(())
     }
 }
 
@@ -338,15 +348,15 @@ impl<'a, 'b> serde::ser::SerializeTuple for &'a mut DocBufSerializer<'b> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_element<T: ?Sized>(&mut self, _value: &T) -> Result<()>
+    fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<()>
     where
         T: Serialize,
     {
-        unimplemented!("serialize_element")
+        value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<Self::Ok> {
-        unimplemented!("end")
+        Ok(())
     }
 }
 
@@ -412,7 +422,7 @@ impl<'a, 'b> serde::ser::SerializeMap for &'a mut DocBufSerializer<'b> {
         value.serialize(&mut **self)?;
 
         // match &field.field_type {
-        //     FieldType::HashMap { key, value } => key.serialize(self),
+        //     VTableFieldType::HashMap { key, value } => key.serialize(self),
         //     _ => {
         //         return Err(Error::Serde(format!(
         //             "Expected a map, found a {:?}",
@@ -450,18 +460,86 @@ impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
     where
         T: Serialize,
     {
+        // println!("Serialize field: {}", name);
+        // println!("Current Item: {:?}", self.current_item);
+
+        let offset_start = self.output.len();
+
         let field = match self.current_item {
-            Some(VTableItem::Struct(field_struct)) => field_struct.field_by_name(name)?,
-            _ => self
+            Some(VTableItem::Struct(field_struct)) => match field_struct.field_by_name(name) {
+                Ok(field) => field,
+                Err(_) => match self.previous_item {
+                    Some(VTableItem::Struct(field_struct)) => {
+                        match field_struct.field_by_name(name) {
+                            Ok(field) => {
+                                self.current_item = self.previous_item;
+                                self.current_item_index = self.previous_item_index;
+                                self.previous_item = None;
+                                field
+                            }
+                            Err(_) => {
+                                return Err(Error::Serde(format!("Field not found: {}", name)));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(Error::Serde(format!("Field not found: {}", name)));
+                    }
+                },
+            },
+            _ => match self
                 .vtable
                 .struct_by_index(self.current_item_index)?
-                .field_by_name(name)?,
+                .field_by_name(name)
+            {
+                Ok(field) => field,
+                Err(_) => {
+                    // println!("Searching previous item");
+
+                    // Try to search previous item
+                    match self
+                        .vtable
+                        .struct_by_index(self.previous_item_index)?
+                        .field_by_name(name)
+                    {
+                        Ok(field) => {
+                            // Reset the current item to the parent struct
+                            self.current_item = self.previous_item;
+                            self.current_item_index = self.previous_item_index;
+                            self.previous_item = None;
+
+                            // Return the field
+                            field
+                        }
+                        Err(_) => {
+                            return Err(Error::Serde(format!("Field not found: {}", name)));
+                        }
+                    }
+                }
+            },
         };
 
         self.current_field_index = field.field_index;
         self.current_field = Some(field);
 
+        // Serialize the field
         value.serialize(&mut **self)?;
+
+        let offset_item_index = self.current_item_index;
+        let offset_field_index = self.current_field_index;
+        let offset_end = self.output.len();
+        let offset_length = match field.field_type {
+            VTableFieldType::String | VTableFieldType::Bytes => 4,
+            VTableFieldType::HashMap { .. } => 4,
+            VTableFieldType::Vec { .. } => 4,
+            _ => 0,
+        };
+
+        self.offsets.push((
+            offset_item_index,
+            offset_field_index,
+            offset_start + offset_length..offset_end,
+        ));
 
         Ok(())
     }

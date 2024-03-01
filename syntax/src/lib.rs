@@ -30,7 +30,7 @@ mod tests {
 
         let docbuf = std::fs::read_to_string("../examples/example.docbuf").unwrap();
 
-        println!("{}", docbuf);
+        // println!("{}", docbuf);
 
         for line in LinesWithEndings::from(&docbuf) {
             let ranges: Vec<(Style, &str)> = h.highlight_line(line, &syntax_set).unwrap();

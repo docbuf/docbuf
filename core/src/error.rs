@@ -1,5 +1,9 @@
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[cfg(feature = "std")]
+    /// IO Error Type
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
     // #[error(transparent)]
     // IDL(#[from] crate::idl::error::Error),
     /// Serde Error Type

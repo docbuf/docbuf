@@ -1,8 +1,17 @@
-use docbuf_core::traits::{DocBuf, DocBufCrypto};
+use docbuf_core::{
+    traits::{DocBuf, DocBufCrypto, DocBufMap},
+    vtable::VTableFieldOffset,
+};
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{SetTestValues, TestHarness};
+
+#[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
+// #[docbuf {
+
+// }]
+pub struct Complex(Vec<Document>);
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
@@ -37,6 +46,12 @@ pub struct Document {
     pub metadata: Metadata,
 }
 
+impl PartialEq for Document {
+    fn eq(&self, other: &Self) -> bool {
+        self.body == other.body && self.footer == other.footer && self.metadata == other.metadata
+    }
+}
+
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
     sign = true;
@@ -46,6 +61,7 @@ pub struct Metadata {
         min_length = 0;
     }]
     pub description: String,
+    pub signature: Signature,
     pub u8_data: u8,
     pub u16_data: u16,
     pub u32_data: u32,
@@ -61,7 +77,30 @@ pub struct Metadata {
     pub i128_data: i128,
     pub isize_data: isize,
     pub hash_map_data: std::collections::HashMap<String, String>,
-    pub signature: Signature,
+    pub byte_data: Vec<u8>,
+}
+
+impl PartialEq for Metadata {
+    fn eq(&self, other: &Self) -> bool {
+        self.description == other.description
+            && self.u8_data == other.u8_data
+            && self.u16_data == other.u16_data
+            && self.u32_data == other.u32_data
+            && self.u64_data == other.u64_data
+            && self.u128_data == other.u128_data
+            && self.usize_data == other.usize_data
+            && self.f32_data == other.f32_data
+            && self.f64_data == other.f64_data
+            && self.i8_data == other.i8_data
+            && self.i16_data == other.i16_data
+            && self.i32_data == other.i32_data
+            && self.i64_data == other.i64_data
+            && self.i128_data == other.i128_data
+            && self.isize_data == other.isize_data
+            && self.hash_map_data == other.hash_map_data
+            && self.signature == other.signature
+            && self.byte_data == other.byte_data
+    }
 }
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
@@ -72,17 +111,24 @@ pub struct Signature {
     #[docbuf {
         length = 32;
     }]
-    pub signature: String,
+    pub signature: [u8; 32],
+}
+
+impl PartialEq for Signature {
+    fn eq(&self, other: &Self) -> bool {
+        self.signature == other.signature
+    }
 }
 
 impl Document {
     pub fn dummy() -> Self {
         Self {
-            title: ["0"; 64].concat(),
-            body: ["0"; 2048].concat(),
-            footer: ["0"; 32].concat(),
+            title: ["T"; 64].concat(),
+            body: ["B"; 2048].concat(),
+            footer: ["F"; 32].concat(),
             metadata: Metadata {
-                description: ["0"; 512].concat(),
+                description: ["D"; 512].concat(),
+                signature: Signature { signature: [0; 32] },
                 u8_data: u8::MAX,
                 u16_data: u16::MAX,
                 u32_data: u32::MAX,
@@ -105,9 +151,13 @@ impl Document {
                     map.insert("3".to_string(), ["3"; 500].concat());
                     map
                 })(),
-                signature: Signature {
-                    signature: ["0"; 32].concat(),
-                },
+                byte_data: (|| {
+                    let mut data = Vec::with_capacity(255);
+                    for i in 0..255 {
+                        data.push(i as u8);
+                    }
+                    data
+                })(),
             },
         }
     }
@@ -143,6 +193,8 @@ fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
 
     println!("doc: {:?}", doc);
 
+    // assert_eq!(document, doc);
+
     Ok(())
 }
 
@@ -162,6 +214,43 @@ fn test_serialize_hash_map() -> Result<(), docbuf_core::error::Error> {
     println!("Buffer length: {:?}", buffer.len());
 
     //
+
+    Ok(())
+}
+
+#[test]
+fn test_write_file() -> Result<(), docbuf_core::error::Error> {
+    let doc = Document::dummy();
+
+    let path_to_file = "test.dbuf"; // relative to current working directory
+
+    doc.to_file(path_to_file)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_docbuf_map() -> Result<(), docbuf_core::error::Error> {
+    let document = Document::dummy();
+
+    let mut buffer = Vec::with_capacity(1024);
+
+    println!("document: {:?}\n\n", document);
+
+    let offsets = document.to_docbuf(&mut buffer)?;
+
+    println!("Buffer: {:?}\n\n", buffer);
+
+    println!("Offsets: {:?}\n\n", offsets);
+
+    let sig_field_data: Vec<u8> = Document::vtable()?.docbuf_map(&buffer, &offsets[4])?;
+
+    println!("Field: {:?}\n\n", sig_field_data);
+
+    assert_eq!(
+        document.metadata.signature.signature.to_vec(),
+        sig_field_data
+    );
 
     Ok(())
 }
