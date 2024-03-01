@@ -1,4 +1,4 @@
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 
 use crate::vtable::*;
 use crate::{error::Error, traits::DocBuf, Result};
@@ -13,6 +13,7 @@ pub struct DocBufSerializer<'a> {
     pub current_item: Option<&'static VTableItem<'static>>,
     pub current_field: Option<&'static VTableField<'static>>,
     pub previous_item: Option<&'static VTableItem<'static>>,
+    pub offsets: VTableFieldOffsets,
 }
 
 impl<'a> DocBufSerializer<'a> {
@@ -29,6 +30,7 @@ impl<'a> DocBufSerializer<'a> {
             current_item: None,
             current_field: None,
             previous_item: None,
+            offsets: VTableFieldOffsets::with_capacity(vtable.num_items as usize),
         }
     }
 
@@ -68,8 +70,14 @@ impl<'a> DocBufSerializer<'a> {
 
     // Encode the &str data into the output vector
     pub fn encode_numeric(&mut self, data: NumericValue) -> Result<()> {
+        // let start = self.output.len();
+
         self.current_field()?
             .encode_numeric_value(data, &mut self.output)?;
+
+        // let end = self.output.len();
+
+        // println!("Numeric Encoding: {:?}", &self.output[start..end]);
 
         Ok(())
     }
@@ -90,7 +98,7 @@ impl<'a> DocBufSerializer<'a> {
     // }
 }
 
-pub fn to_docbuf<T>(value: &T, buffer: &mut Vec<u8>) -> Result<()>
+pub fn to_docbuf<T>(value: &T, buffer: &mut Vec<u8>) -> Result<VTableFieldOffsets>
 where
     T: Serialize + DocBuf + std::fmt::Debug,
 {
@@ -100,7 +108,7 @@ where
 
     // println!("Buffer: {:?}", buffer);
 
-    Ok(())
+    Ok(serializer.offsets)
 }
 
 impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
@@ -150,7 +158,9 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok> {
-        self.encode_numeric(NumericValue::F32(v))
+        self.encode_numeric(NumericValue::F32(v))?;
+
+        Ok(())
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok> {
@@ -187,7 +197,7 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
         let field = self.current_field()?;
 
         // Shortcut validation for byte arrays
-        if let FieldType::Bytes = field.field_type {
+        if let VTableFieldType::Bytes = field.field_type {
             self.output.push(v);
 
             Ok(())
@@ -274,7 +284,7 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
         let field = self.current_field()?;
 
-        if let FieldType::Bytes = field.field_type {
+        if let VTableFieldType::Bytes = field.field_type {
             // Encode the length of the byte array
             self.encode_array_start(len)?;
         }
@@ -412,7 +422,7 @@ impl<'a, 'b> serde::ser::SerializeMap for &'a mut DocBufSerializer<'b> {
         value.serialize(&mut **self)?;
 
         // match &field.field_type {
-        //     FieldType::HashMap { key, value } => key.serialize(self),
+        //     VTableFieldType::HashMap { key, value } => key.serialize(self),
         //     _ => {
         //         return Err(Error::Serde(format!(
         //             "Expected a map, found a {:?}",
@@ -452,6 +462,8 @@ impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
     {
         // println!("Serialize field: {}", name);
         // println!("Current Item: {:?}", self.current_item);
+
+        let offset_start = self.output.len();
 
         let field = match self.current_item {
             Some(VTableItem::Struct(field_struct)) => match field_struct.field_by_name(name) {
@@ -510,7 +522,24 @@ impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
         self.current_field_index = field.field_index;
         self.current_field = Some(field);
 
+        // Serialize the field
         value.serialize(&mut **self)?;
+
+        let offset_item_index = self.current_item_index;
+        let offset_field_index = self.current_field_index;
+        let offset_end = self.output.len();
+        let offset_length = match field.field_type {
+            VTableFieldType::String | VTableFieldType::Bytes => 4,
+            VTableFieldType::HashMap { .. } => 4,
+            VTableFieldType::Vec { .. } => 4,
+            _ => 0,
+        };
+
+        self.offsets.push((
+            offset_item_index,
+            offset_field_index,
+            offset_start + offset_length..offset_end,
+        ));
 
         Ok(())
     }

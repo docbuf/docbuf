@@ -1,6 +1,7 @@
-use crate::error;
-
-use crate::vtable::VTable;
+use crate::{
+    error,
+    vtable::{VTable, VTableFieldOffset, VTableFieldOffsets},
+};
 
 #[cfg(feature = "crypto")]
 use crate::crypto::{
@@ -10,22 +11,16 @@ use crate::crypto::{
 
 pub trait DocBuf {
     // inner type for the Document Buffer
-    type Doc;
+    type Doc: DocBuf + std::fmt::Debug;
 
-    // Document buffer struct with additional fields for options and validation
-    type DocBuf: DocBuf + std::fmt::Debug;
-
-    /// Consumes the document buffer and returns the inner document type
-    fn to_doc(self) -> Self::Doc;
-
-    /// Returns a reference to the inner document type
-    fn as_doc(&self) -> &Self::Doc;
-
-    /// From the document type, return the document buffer
-    fn from_doc(doc: Self::Doc) -> Self;
+    /// Return the virtual table (vtable) for the document buffer
+    fn vtable() -> Result<&'static VTable<'static>, error::Error>;
 
     /// Convert the document to a document buffer
-    fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<(), error::Error>;
+    fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<VTableFieldOffsets, error::Error>;
+
+    /// Convert the document buffer to a document
+    fn from_docbuf(buffer: &[u8]) -> Result<Self::Doc, error::Error>;
 
     /// Write the document buffer to a file
     #[cfg(feature = "std")]
@@ -41,12 +36,6 @@ pub trait DocBuf {
 
         Ok(())
     }
-
-    /// Convert the document buffer to a document
-    fn from_docbuf(buf: &[u8]) -> Result<Self::DocBuf, error::Error>;
-
-    /// Return the virtual table (vtable) for the document buffer
-    fn vtable() -> Result<&'static VTable<'static>, error::Error>;
 }
 
 #[cfg(feature = "crypto")]
@@ -106,4 +95,15 @@ pub trait DocBufCrypto: DocBuf {
         // Return the hash result
         Ok(result.to_vec())
     }
+}
+
+/// This trait is used by the vtable to read a field from the
+/// document buffer, rather than deserializing the entire document.
+pub trait DocBufMap<T> {
+    // Read a field from the document buffer, given the field offset.
+    fn docbuf_map(
+        &self,
+        buffer: &[u8],
+        offset: &VTableFieldOffset,
+    ) -> Result<T, crate::vtable::Error>;
 }

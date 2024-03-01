@@ -1,8 +1,17 @@
-use docbuf_core::traits::{DocBuf, DocBufCrypto};
+use docbuf_core::{
+    traits::{DocBuf, DocBufCrypto, DocBufMap},
+    vtable::VTableFieldOffset,
+};
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{SetTestValues, TestHarness};
+
+#[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
+// #[docbuf {
+
+// }]
+pub struct Complex(Vec<Document>);
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
@@ -216,6 +225,32 @@ fn test_write_file() -> Result<(), docbuf_core::error::Error> {
     let path_to_file = "test.dbuf"; // relative to current working directory
 
     doc.to_file(path_to_file)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_docbuf_map() -> Result<(), docbuf_core::error::Error> {
+    let document = Document::dummy();
+
+    let mut buffer = Vec::with_capacity(1024);
+
+    println!("document: {:?}\n\n", document);
+
+    let offsets = document.to_docbuf(&mut buffer)?;
+
+    println!("Buffer: {:?}\n\n", buffer);
+
+    println!("Offsets: {:?}\n\n", offsets);
+
+    let sig_field_data: Vec<u8> = Document::vtable()?.docbuf_map(&buffer, &offsets[4])?;
+
+    println!("Field: {:?}\n\n", sig_field_data);
+
+    assert_eq!(
+        document.metadata.signature.signature.to_vec(),
+        sig_field_data
+    );
 
     Ok(())
 }

@@ -17,6 +17,8 @@ criterion_group!(
     // serialization::benchmark_docbuf_serializer,
     serialization::benchmark_complex_serialization,
     serialization::benchmark_unsigned_integers,
+    // Deserialization Benchmarks
+    deserialization::benchmark_complex_deserialization_docbuf_map,
 );
 
 criterion_main!(docbuf_benchmarks);

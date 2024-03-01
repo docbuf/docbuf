@@ -1,7 +1,7 @@
 use criterion::{black_box, Criterion};
 use docbuf_core::{
     traits::DocBuf,
-    vtable::{FieldRules, VTable},
+    vtable::{VTable, VTableFieldRules},
 };
 use docbuf_tests::complex;
 
@@ -50,11 +50,11 @@ pub fn benchmark_vtable_struct_lookup(c: &mut Criterion) {
 //     let mut group = c.benchmark_group("benchmark_le_bytes");
 
 //     group.bench_function("benchmark_u16_bytes", |b| {
-//         b.iter(|| black_box(FieldRules::le_bytes_data_length(u16::MAX as usize)))
+//         b.iter(|| black_box(VTableFieldRules::le_bytes_data_length(u16::MAX as usize)))
 //     });
 
 //     group.bench_function("benchmark_u64_le_bytes", |b| {
-//         b.iter(|| black_box(FieldRules::le_bytes_data_length(u64::MAX as usize)))
+//         b.iter(|| black_box(VTableFieldRules::le_bytes_data_length(u64::MAX as usize)))
 //     });
 
 //     group.finish();

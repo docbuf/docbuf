@@ -11,10 +11,10 @@ pub struct DocBufDeserializer {
     vtable: &'static VTable<'static>,
     raw_values: DocBufRawValues,
     current_item_index: VTableItemIndex,
-    current_field_index: FieldIndex,
+    current_field_index: VTableFieldIndex,
     current_item: Option<&'static VTableItem<'static>>,
     current_field: Option<&'static VTableField<'static>>,
-    has_visited: HashSet<(VTableItemIndex, FieldIndex)>,
+    has_visited: HashSet<(VTableItemIndex, VTableFieldIndex)>,
     has_descended: bool,
 }
 
@@ -58,7 +58,7 @@ impl<'de> DocBufDeserializer {
             VTableItem::Struct(s) => {
                 let field = s.field_by_index(&self.current_field_index)?;
 
-                if let FieldType::Struct(_) = field.field_type {
+                if let VTableFieldType::Struct(_) = field.field_type {
                     if !self.has_descended {
                         self.current_item_index -= 1;
                         self.current_field_index = 0;
@@ -553,7 +553,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
         let field = self.current_field()?;
 
         let value = match &field.field_type {
-            FieldType::String => {
+            VTableFieldType::String => {
                 // Increment the field index
                 self.next_field()?;
 
@@ -561,7 +561,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
 
                 String::from_utf8(data)?
             }
-            FieldType::HashMap { key, value } => {
+            VTableFieldType::HashMap { key, value } => {
                 let length = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
 
                 let value = data
@@ -612,7 +612,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
         // println!("Field: {:?}", field);
 
         let value = match &field.field_type {
-            FieldType::String => {
+            VTableFieldType::String => {
                 // Increment the field index
                 self.next_field()?;
 
@@ -620,7 +620,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer {
 
                 String::from_utf8(field_data)?
             }
-            FieldType::HashMap { key, value } => {
+            VTableFieldType::HashMap { key, value } => {
                 let length = u32::from_le_bytes([
                     field_data[0],
                     field_data[1],

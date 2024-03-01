@@ -1,5 +1,5 @@
 use criterion::{black_box, BenchmarkId, Criterion};
-use docbuf_core::{serde::ser::DocBufSerializer, traits::DocBuf};
+use docbuf_core::traits::DocBuf;
 use docbuf_tests::{complex, test_deps::*, unsigned_integers::*};
 
 // Benchmark the serialization of a complex document.

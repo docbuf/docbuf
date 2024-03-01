@@ -43,7 +43,7 @@ impl From<TokenStream> for DocBufOpts {
                 let mut span = Vec::new();
 
                 for _ in 0..4 {
-                    span.push(iter.next().unwrap());
+                    span.push(iter.next().expect("Invalid attribute format."));
                 }
 
                 span.into_iter()
@@ -121,19 +121,6 @@ pub fn docbuf_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let output = quote! {
         impl #lifetimes ::docbuf_core::traits::DocBuf for #name #lifetimes {
             type Doc = Self;
-            type DocBuf = Self;
-
-            fn to_doc(self) -> Self::Doc {
-                self
-            }
-
-            fn as_doc(&self) -> &Self::Doc {
-                self
-            }
-
-            fn from_doc(doc: Self::Doc) -> Self {
-                doc
-            }
 
             // Serialization Methods
             #serialization_methods
@@ -171,16 +158,16 @@ pub fn docbuf_impl_crypto(
 pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
 
-    let ast: ItemStruct = syn::parse(item.to_owned().into()).unwrap();
+    let ast: ItemStruct = syn::parse(item.to_owned().into()).expect("Failed to parse item");
 
     let fields = ast.fields.into_iter().collect::<Vec<_>>();
 
     let fields = fields.iter().map(|field| {
-        let name = field.ident.as_ref().unwrap();
+        let name = field.ident.as_ref().map(|f| f.to_owned()).unwrap_or(Ident::new("__inner__", Span::call_site()));
         let ty = field.ty.to_token_stream();
         let rules = parse_field_rules(&field).expect("Failed to parse field rules");
 
-        match crate::vtable::FieldType::is_struct(ty.to_string().as_ref()) {
+        match crate::vtable::VTableFieldType::is_struct(ty.to_string().as_ref()) {
             true => {
                 let table_name = format!("{}_vtable", ty.to_string()).to_lowercase();
                 let table_name_var = Ident::new(&table_name, Span::call_site());
@@ -197,7 +184,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                             ::docbuf_core::vtable::VTableItem::Struct(#struct_name_var) => {
                                 let name = #struct_name_var.struct_name;
                                 if name == stringify!(#ty) {
-                                    let field_type = ::docbuf_core::vtable::FieldType::Struct(name);
+                                    let field_type = ::docbuf_core::vtable::VTableFieldType::Struct(name);
 
                                     // Add the field rules to the vtable field
                                     #rules
@@ -266,10 +253,10 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 pub fn docbuf_impl_serialization(_input: TokenStream) -> TokenStream {
     let output = quote! {
         // Serialize the struct to a byte buffer
-        fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<(), ::docbuf_core::error::Error> {
-            ::docbuf_core::serde::ser::to_docbuf(self, buffer)?;
+        fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<::docbuf_core::vtable::VTableFieldOffsets, ::docbuf_core::error::Error> {
+            let offsets = ::docbuf_core::serde::ser::to_docbuf(self, buffer)?;
 
-            Ok(())
+            Ok(offsets)
         }
 
         // Deserialize the byte buffer to a struct
@@ -326,13 +313,13 @@ pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 // Parse the item name from the input token stream
 pub fn parse_item_name(input: &TokenStream) -> TokenStream {
-    let ast: DeriveInput = syn::parse(input.to_owned().into()).unwrap();
+    let ast: DeriveInput = syn::parse(input.to_owned().into()).expect("Failed to parse input");
     ast.ident.to_token_stream()
 }
 
 // Parse the item fields from the input stream
 pub fn parse_item_fields(input: &TokenStream) -> TokenStream {
-    let ast: ItemStruct = syn::parse(input.to_owned().into()).unwrap();
+    let ast: ItemStruct = syn::parse(input.to_owned().into()).expect("Failed to parse input");
     let fields = ast.fields.iter().map(|field| {
         let name = field.ident.as_ref().unwrap();
         let ty = field.ty.to_token_stream();
@@ -422,7 +409,7 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
         .collect::<Result<Vec<TokenStream>, Error>>()?;
 
     let rules = quote!(
-        let mut field_rules = ::docbuf_core::vtable::FieldRules::new();
+        let mut field_rules = ::docbuf_core::vtable::VTableFieldRules::new();
 
         #(#fields)*
     );

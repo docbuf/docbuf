@@ -135,7 +135,7 @@ impl<'a> VTable<'a> {
     pub fn get_struct_field_by_index(
         &self,
         item_index: VTableItemIndex,
-        field_index: FieldIndex,
+        field_index: VTableFieldIndex,
     ) -> Result<&VTableField, Error> {
         let vtable_struct = self.struct_by_index(item_index)?;
         vtable_struct.field_by_index(&field_index)
@@ -145,7 +145,7 @@ impl<'a> VTable<'a> {
     pub fn get_item_field_by_index(
         &self,
         item_index: VTableItemIndex,
-        field_index: FieldIndex,
+        field_index: VTableFieldIndex,
     ) -> Result<&VTableField, Error> {
         self.item_by_index(item_index)
             .and_then(|vtable_item| match vtable_item {
@@ -159,7 +159,7 @@ impl<'a> VTable<'a> {
         let mut current_item_index = self.num_items - 1;
         let mut current_field_index = 0;
         let mut has_descended = false;
-        let mut has_visited = HashSet::<(VTableItemIndex, FieldIndex)>::new();
+        let mut has_visited = HashSet::<(VTableItemIndex, VTableFieldIndex)>::new();
 
         let mut data = DocBufRawValues::new();
         let mut input = input.to_vec();
@@ -198,7 +198,7 @@ impl<'a> VTable<'a> {
                             // If the field type is a struct, decrement the current item index
                             // to descend into the struct. reset the field index to 0.
                             match field.field_type {
-                                FieldType::Struct(_) => {
+                                VTableFieldType::Struct(_) => {
                                     if !has_descended {
                                         current_item_index -= 1;
                                         current_field_index = 0;
@@ -291,21 +291,30 @@ impl<'a> VTable<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct DocBufRawValues(HashMap<VTableItemIndex, HashMap<FieldIndex, Vec<u8>>>);
+pub struct DocBufRawValues(HashMap<VTableItemIndex, HashMap<VTableFieldIndex, Vec<u8>>>);
 
 impl DocBufRawValues {
     pub fn new() -> Self {
         DocBufRawValues(HashMap::new())
     }
 
-    pub fn insert(&mut self, item_index: VTableItemIndex, field_index: FieldIndex, value: Vec<u8>) {
+    pub fn insert(
+        &mut self,
+        item_index: VTableItemIndex,
+        field_index: VTableFieldIndex,
+        value: Vec<u8>,
+    ) {
         self.0
             .entry(item_index)
             .or_insert_with(HashMap::new)
             .insert(field_index, value);
     }
 
-    pub fn get(&self, item_index: VTableItemIndex, field_index: FieldIndex) -> Option<&Vec<u8>> {
+    pub fn get(
+        &self,
+        item_index: VTableItemIndex,
+        field_index: VTableFieldIndex,
+    ) -> Option<&Vec<u8>> {
         self.0.get(&item_index)?.get(&field_index)
     }
 
@@ -318,7 +327,7 @@ impl DocBufRawValues {
     pub fn remove(
         &mut self,
         item_index: VTableItemIndex,
-        field_index: FieldIndex,
+        field_index: VTableFieldIndex,
     ) -> Option<Vec<u8>> {
         let structs = self.0.get_mut(&item_index)?;
         let value = structs.remove(&field_index);

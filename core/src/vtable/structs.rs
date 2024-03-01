@@ -7,7 +7,7 @@ pub struct VTableStruct<'a> {
     pub item_index: VTableItemIndex,
     pub struct_name: StructName<'a>,
     pub fields: VTableFields<'a>,
-    pub num_fields: FieldIndex,
+    pub num_fields: VTableFieldIndex,
 }
 
 impl<'a> VTableStruct<'a> {
@@ -22,9 +22,9 @@ impl<'a> VTableStruct<'a> {
 
     pub fn add_field(
         &mut self,
-        field_type: impl Into<FieldType<'a>>,
+        field_type: impl Into<VTableFieldType<'a>>,
         field_name: &'a str,
-        field_rules: FieldRules,
+        field_rules: VTableFieldRules,
     ) {
         // println!("Adding Field: {}", field_name);
 
@@ -50,7 +50,7 @@ impl<'a> VTableStruct<'a> {
     }
 
     // Return the field index from the struct
-    pub fn field_index_from_name(&self, name: &str) -> Result<FieldIndex, Error> {
+    pub fn field_index_from_name(&self, name: &str) -> Result<VTableFieldIndex, Error> {
         Ok(self.field_by_name(name)?.field_index)
     }
 
@@ -62,7 +62,7 @@ impl<'a> VTableStruct<'a> {
     }
 
     // Return the field by index from the struct
-    pub fn field_by_index(&self, index: &FieldIndex) -> Result<&VTableField, Error> {
+    pub fn field_by_index(&self, index: &VTableFieldIndex) -> Result<&VTableField, Error> {
         for field in self.fields.iter() {
             if field.field_index == *index {
                 return Ok(field);
@@ -72,7 +72,10 @@ impl<'a> VTableStruct<'a> {
         Err(Error::FieldNotFound)
     }
 
-    pub fn field_rules_by_index(&self, index: &FieldIndex) -> Result<&FieldRules, Error> {
+    pub fn field_rules_by_index(
+        &self,
+        index: &VTableFieldIndex,
+    ) -> Result<&VTableFieldRules, Error> {
         self.field_by_index(index).map(|field| &field.field_rules)
     }
 }
