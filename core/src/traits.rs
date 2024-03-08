@@ -20,7 +20,7 @@ pub trait DocBuf {
     fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<VTableFieldOffsets, error::Error>;
 
     /// Convert the document buffer to a document
-    fn from_docbuf(buffer: &[u8]) -> Result<Self::Doc, error::Error>;
+    fn from_docbuf<'a>(buffer: &'a mut Vec<u8>) -> Result<Self::Doc, error::Error>;
 
     /// Write the document buffer to a file
     #[cfg(feature = "std")]
@@ -106,4 +106,14 @@ pub trait DocBufMap<T> {
         buffer: &[u8],
         offset: &VTableFieldOffset,
     ) -> Result<T, crate::vtable::Error>;
+}
+
+/// DocBufEncodeField is a trait used to serialize a field to the document buffer.
+pub trait DocBufEncodeField {
+    fn encode(&self, buffer: &mut Vec<u8>) -> Result<VTableFieldOffset, crate::vtable::Error>;
+}
+
+/// DocBufDecodeField is a trait used to deserialize a field from the document buffer.
+pub trait DocBufDecodeField<T> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<T, crate::vtable::Error>;
 }

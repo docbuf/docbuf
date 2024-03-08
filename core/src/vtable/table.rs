@@ -147,6 +147,8 @@ impl<'a> VTable<'a> {
         item_index: VTableItemIndex,
         field_index: VTableFieldIndex,
     ) -> Result<&VTableField, Error> {
+        // println!("Get Item Field By Index");
+
         self.item_by_index(item_index)
             .and_then(|vtable_item| match vtable_item {
                 VTableItem::Struct(vtable_struct) => vtable_struct
@@ -155,139 +157,139 @@ impl<'a> VTable<'a> {
             })
     }
 
-    pub fn parse_raw_values(&self, input: &[u8]) -> Result<DocBufRawValues, Error> {
-        let mut current_item_index = self.num_items - 1;
-        let mut current_field_index = 0;
-        let mut has_descended = false;
-        let mut has_visited = HashSet::<(VTableItemIndex, VTableFieldIndex)>::new();
+    // pub fn parse_raw_values(&self, input: &[u8]) -> Result<DocBufRawValues, Error> {
+    //     let mut current_item_index = self.num_items - 1;
+    //     let mut current_field_index = 0;
+    //     let mut has_descended = false;
+    //     let mut has_visited = HashSet::<(VTableItemIndex, VTableFieldIndex)>::new();
 
-        let mut data = DocBufRawValues::new();
-        let mut input = input.to_vec();
+    //     let mut data = DocBufRawValues::new();
+    //     let mut input = input.to_vec();
 
-        while !input.is_empty() {
-            // Skip if the field has already been visited.
-            if has_visited
-                .get(&(current_item_index, current_field_index))
-                .is_some()
-            {
-                current_field_index += 1;
-                // println!("Skipping visited field");
-                continue;
-            }
+    //     while !input.is_empty() {
+    //         // Skip if the field has already been visited.
+    //         if has_visited
+    //             .get(&(current_item_index, current_field_index))
+    //             .is_some()
+    //         {
+    //             current_field_index += 1;
+    //             // println!("Skipping visited field");
+    //             continue;
+    //         }
 
-            // println!("Input: {:?}", input);
+    //         // println!("Input: {:?}", input);
 
-            // println!("Current Item Index: {}", current_item_index);
-            // println!("Current Field Index: {}", current_field_index);
-            // println!("Number of Items: {}", self.num_items);
-            // println!("Has Descended: {}", has_descended);
+    //         // println!("Current Item Index: {}", current_item_index);
+    //         // println!("Current Field Index: {}", current_field_index);
+    //         // println!("Number of Items: {}", self.num_items);
+    //         // println!("Has Descended: {}", has_descended);
 
-            let item = self.item_by_index(current_item_index)?;
+    //         let item = self.item_by_index(current_item_index)?;
 
-            // println!("Item: {:?}", item);
+    //         // println!("Item: {:?}", item);
 
-            match item {
-                VTableItem::Struct(s) => {
-                    match s.field_by_index(&current_field_index) {
-                        Ok(field) => {
-                            // println!("Decoding Field: {:?}", field);
+    //         match item {
+    //             VTableItem::Struct(s) => {
+    //                 match s.field_by_index(&current_field_index) {
+    //                     Ok(field) => {
+    //                         // println!("Decoding Field: {:?}", field);
 
-                            // Memoize the current item and field index
-                            has_visited.insert((current_item_index, current_field_index));
+    //                         // Memoize the current item and field index
+    //                         has_visited.insert((current_item_index, current_field_index));
 
-                            // If the field type is a struct, decrement the current item index
-                            // to descend into the struct. reset the field index to 0.
-                            match field.field_type {
-                                VTableFieldType::Struct(_) => {
-                                    if !has_descended {
-                                        current_item_index -= 1;
-                                        current_field_index = 0;
-                                        continue;
-                                    }
-                                }
-                                _ => {
-                                    let field_data = field.decode(&mut input)?;
+    //                         // If the field type is a struct, decrement the current item index
+    //                         // to descend into the struct. reset the field index to 0.
+    //                         match field.field_type {
+    //                             VTableFieldType::Struct(_) => {
+    //                                 if !has_descended {
+    //                                     current_item_index -= 1;
+    //                                     current_field_index = 0;
+    //                                     continue;
+    //                                 }
+    //                             }
+    //                             _ => {
+    //                                 let field_data = field.decode(&mut input)?;
 
-                                    if !field_data.is_empty() {
-                                        data.insert(
-                                            current_item_index,
-                                            current_field_index,
-                                            field_data,
-                                        );
-                                    }
-                                }
-                            };
+    //                                 if !field_data.is_empty() {
+    //                                     data.insert(
+    //                                         current_item_index,
+    //                                         current_field_index,
+    //                                         field_data,
+    //                                     );
+    //                                 }
+    //                             }
+    //                         };
 
-                            if current_field_index < s.num_fields - 1 {
-                                // println!("Incrementing Field Index");
-                                current_field_index += 1;
-                            } else if current_item_index > 0 && !has_descended {
-                                // println!("Decrementing Item Index");
-                                current_item_index -= 1;
-                                current_field_index = 0;
-                            } else if current_item_index == 0
-                                && current_field_index == s.num_fields - 1
-                                && !has_descended
-                            {
-                                // println!("Has Descended");
-                                has_descended = true;
-                                current_item_index += 1;
-                                current_field_index = 0;
-                            } else if current_item_index < self.num_items - 1 && has_descended {
-                                // println!("Incrementing Item Index");
-                                current_item_index += 1;
-                                current_field_index = 0;
-                            } else {
-                                return Err(Error::FailedToParseData);
-                            }
-                        }
-                        _ => {
-                            unimplemented!("error handle parse data");
+    //                         if current_field_index < s.num_fields - 1 {
+    //                             // println!("Incrementing Field Index");
+    //                             current_field_index += 1;
+    //                         } else if current_item_index > 0 && !has_descended {
+    //                             // println!("Decrementing Item Index");
+    //                             current_item_index -= 1;
+    //                             current_field_index = 0;
+    //                         } else if current_item_index == 0
+    //                             && current_field_index == s.num_fields - 1
+    //                             && !has_descended
+    //                         {
+    //                             // println!("Has Descended");
+    //                             has_descended = true;
+    //                             current_item_index += 1;
+    //                             current_field_index = 0;
+    //                         } else if current_item_index < self.num_items - 1 && has_descended {
+    //                             // println!("Incrementing Item Index");
+    //                             current_item_index += 1;
+    //                             current_field_index = 0;
+    //                         } else {
+    //                             return Err(Error::FailedToParseData);
+    //                         }
+    //                     }
+    //                     _ => {
+    //                         unimplemented!("error handle parse data");
 
-                            // if current_item_index == self.num_items - 1
-                            //     && current_field_index == s.num_fields - 1
-                            //     && has_descended
-                            // {
-                            //     println!("Data: {:?}", data);
-                            //     println!("Input: {:?}", input);
+    //                         // if current_item_index == self.num_items - 1
+    //                         //     && current_field_index == s.num_fields - 1
+    //                         //     && has_descended
+    //                         // {
+    //                         //     println!("Data: {:?}", data);
+    //                         //     println!("Input: {:?}", input);
 
-                            //     // If we've reached the end of the items
-                            //     // and the data is not empty, we must
-                            //     // return an error.
-                            //     return Err(Error::FailedToParseData);
-                            // }
+    //                         //     // If we've reached the end of the items
+    //                         //     // and the data is not empty, we must
+    //                         //     // return an error.
+    //                         //     return Err(Error::FailedToParseData);
+    //                         // }
 
-                            // if !has_descended
-                            //     && current_item_index == 0
-                            //     && current_field_index == s.num_fields
-                            // {
-                            //     // reached the end of the items
-                            //     has_descended = true;
-                            //     // begin to "resurface" to the top of the vtable
-                            //     current_item_index += 1;
-                            //     // Reset the field index to 0
-                            //     current_field_index = 0;
-                            // }
+    //                         // if !has_descended
+    //                         //     && current_item_index == 0
+    //                         //     && current_field_index == s.num_fields
+    //                         // {
+    //                         //     // reached the end of the items
+    //                         //     has_descended = true;
+    //                         //     // begin to "resurface" to the top of the vtable
+    //                         //     current_item_index += 1;
+    //                         //     // Reset the field index to 0
+    //                         //     current_field_index = 0;
+    //                         // }
 
-                            // if has_descended {
-                            //     current_item_index += 1;
-                            // } else {
-                            //     current_item_index -= 1;
-                            // }
+    //                         // if has_descended {
+    //                         //     current_item_index += 1;
+    //                         // } else {
+    //                         //     current_item_index -= 1;
+    //                         // }
 
-                            // current_field_index = 0;
-                        }
-                    }
-                }
-            };
-        }
+    //                         // current_field_index = 0;
+    //                     }
+    //                 }
+    //             }
+    //         };
+    //     }
 
-        // println!("Data: {:?}", data);
+    //     // println!("Data: {:?}", data);
 
-        // unimplemented!("parse raw values");
+    //     // unimplemented!("parse raw values");
 
-        Ok(data)
-    }
+    //     Ok(data)
+    // }
 }
 
 #[derive(Debug, Clone)]

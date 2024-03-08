@@ -181,7 +181,7 @@ impl Parser {
                                 let span =
                                     parser.context.previous_span.end + 1..tokens.span().start;
                                 let import = source[span].trim().to_string();
-                                println!("Import: {:?}", import);
+                                // println!("Import: {:?}", import);
                                 // let import = Self::search_imports(source, Path::new("."))?;
                                 // parser.imports = import;
                             }
@@ -192,8 +192,8 @@ impl Parser {
                                     let option_value = source[span].trim().to_string();
                                     let value = option_value.trim().replace('\"', "");
 
-                                    println!("Option Item: {:?}", option_item);
-                                    println!("Option Value: {:?}", value);
+                                    // println!("Option Item: {:?}", option_item);
+                                    // println!("Option Value: {:?}", value);
 
                                     match &mut parser.context.current_option_set {
                                         OptionSet::Document(options) => {
@@ -250,7 +250,7 @@ impl Parser {
                             _ => {}
                         }
 
-                        println!("Parser: {:?}", parser);
+                        // println!("Parser: {:?}", parser);
                     }
                     Token::DocumentOptionsStart => {
                         // Set the current document to defaults

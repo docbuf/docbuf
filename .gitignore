@@ -3,3 +3,4 @@
 /target
 /guide/book
 **/flamegraph.svg
+**.dbuf

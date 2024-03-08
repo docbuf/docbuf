@@ -56,6 +56,7 @@ impl<'a> VTableStruct<'a> {
 
     // Return the field by name from the struct
     pub fn field_by_name(&self, name: &str) -> Result<&VTableField, Error> {
+        // println!("Field By Name");
         self.fields
             .find_field_by_name(name)
             .ok_or(Error::FieldNotFound)
@@ -63,6 +64,7 @@ impl<'a> VTableStruct<'a> {
 
     // Return the field by index from the struct
     pub fn field_by_index(&self, index: &VTableFieldIndex) -> Result<&VTableField, Error> {
+        // println!("Field By Index");
         for field in self.fields.iter() {
             if field.field_index == *index {
                 return Ok(field);

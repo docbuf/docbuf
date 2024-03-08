@@ -44,8 +44,10 @@ pub enum Error {
     MapEntriesExceedsMax(usize),
     #[error("Array length exceeds max: {0}")]
     ArrayElementsExceedsMax(usize),
-    #[error("Invalid memory map field type, expected: {0}")]
-    InvalidMemoryMapFieldType(String),
+    #[error("Invalid docbuf map field type, expected: {0}")]
+    DocBufMapInvalidFieldType(String),
+    #[error("Failed to decode docbuf map field type: {0}")]
+    DocBufDecodeFieldType(String),
 }
 
 #[cfg(test)]

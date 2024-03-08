@@ -1,6 +1,8 @@
 use std::ops::Range;
 use std::{cmp::Ordering, str::FromStr};
 
+use crate::traits::DocBufDecodeField;
+
 pub use super::*;
 
 #[cfg(feature = "regex")]
@@ -119,6 +121,32 @@ impl<'a> VTableField<'a> {
         Ok(())
     }
 
+    pub fn encode_bytes(&self, field_data: &[u8], output: &mut Vec<u8>) -> Result<(), Error> {
+        // Ensure the field data corresponds to the field rules
+        #[cfg(feature = "validate")]
+        self.validate_bytes(field_data)?;
+
+        // prepend length to the field data
+        output.extend_from_slice(&(field_data.len() as u32).to_le_bytes());
+
+        output.extend_from_slice(field_data);
+
+        // println!("encode_bytes OUTPUT: {:?}", output);
+
+        Ok(())
+    }
+
+    pub fn encode_bool(&self, field_data: bool, output: &mut Vec<u8>) -> Result<(), Error> {
+        // // Ensure the field data corresponds to the field rules
+        // #[cfg(feature = "validate")]
+        // self.validate_bool(field_data)?;
+
+        // Encode the field data
+        output.push(if field_data { 1 } else { 0 });
+
+        Ok(())
+    }
+
     pub fn encode_numeric_value(
         &self,
         field_data: NumericValue,
@@ -134,48 +162,56 @@ impl<'a> VTableField<'a> {
         Ok(())
     }
 
-    pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
-        Ok(match &self.field_type {
-            VTableFieldType::String | VTableFieldType::Bytes => {
-                self.decode_variable_length(bytes)?
-            }
-            VTableFieldType::U8 | VTableFieldType::I8 => {
-                let field_data = bytes.drain(0..1);
+    /// Decode a field from the bytes, assuming the field is the next field in the bytes.
+    ///
+    /// Consumes the incoming bytes, returning only the span of field data bytes.
+    // pub fn decode(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
+    //     Ok(match &self.field_type {
+    //         VTableFieldType::String | VTableFieldType::Bytes => {
+    //             self.decode_variable_length(bytes)?
+    //         }
+    //         VTableFieldType::U8 | VTableFieldType::I8 => {
+    //             let field_data = bytes.drain(0..1);
 
-                field_data.collect()
-            }
-            VTableFieldType::U16 | VTableFieldType::I16 => {
-                let field_data = bytes.drain(0..2);
+    //             field_data.collect()
+    //         }
+    //         VTableFieldType::U16 | VTableFieldType::I16 => {
+    //             let field_data = bytes.drain(0..2);
 
-                field_data.collect()
-            }
-            VTableFieldType::U32 | VTableFieldType::F32 | VTableFieldType::I32 => {
-                let field_data = bytes.drain(0..4);
+    //             field_data.collect()
+    //         }
+    //         VTableFieldType::U32 | VTableFieldType::F32 | VTableFieldType::I32 => {
+    //             let field_data = bytes.drain(0..4);
 
-                field_data.collect()
-            }
-            VTableFieldType::U64
-            | VTableFieldType::F64
-            | VTableFieldType::USIZE
-            | VTableFieldType::I64
-            | VTableFieldType::ISIZE => {
-                let field_data = bytes.drain(0..8);
+    //             field_data.collect()
+    //         }
+    //         VTableFieldType::U64
+    //         | VTableFieldType::F64
+    //         | VTableFieldType::USIZE
+    //         | VTableFieldType::I64
+    //         | VTableFieldType::ISIZE => {
+    //             let field_data = bytes.drain(0..8);
 
-                field_data.collect()
-            }
-            VTableFieldType::U128 | VTableFieldType::I128 => {
-                let field_data = bytes.drain(0..16);
+    //             field_data.collect()
+    //         }
+    //         VTableFieldType::U128 | VTableFieldType::I128 => {
+    //             let field_data = bytes.drain(0..16);
 
-                field_data.collect()
-            }
+    //             field_data.collect()
+    //         }
 
-            VTableFieldType::Struct(_) => Vec::new(),
-            VTableFieldType::HashMap { key, value } => self.decode_map_data(key, value, bytes)?,
-            _ => {
-                unimplemented!("Decode Field Type: {:#?}", self.field_type);
-            }
-        })
-    }
+    //         VTableFieldType::Struct(_) => Vec::new(),
+    //         // VTableFieldType::HashMap { key, value } => self.decode_map_data(key, value, bytes)?,
+    //         VTableFieldType::Bool => {
+    //             let field_data = bytes.drain(0..1);
+
+    //             field_data.collect()
+    //         }
+    //         _ => {
+    //             unimplemented!("Decode Field Type: {:#?}", self.field_type);
+    //         }
+    //     })
+    // }
 
     pub fn decode_map_data(
         &self,
@@ -223,6 +259,8 @@ impl<'a> VTableField<'a> {
     // Decodes the field data from the bytes input.
     // Returns the raw field data and removes the field data from the bytes, including its length.
     pub fn decode_variable_length(&self, bytes: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
+        // println!("Decoding Variable length bytes: {:?}", bytes);
+
         let length = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
 
         // Remove the encoded length from the bytes
@@ -234,6 +272,28 @@ impl<'a> VTableField<'a> {
         // println!("Field Data: {:?}", field_data);
 
         Ok(field_data.collect())
+    }
+
+    pub fn validate_bytes(&self, data: &[u8]) -> Result<(), Error> {
+        // Skip validation if no field rules are present
+        if self.field_rules.is_none() {
+            return Ok(());
+        }
+
+        match self.field_type {
+            VTableFieldType::Bytes => {
+                // Check for string length rules
+                self.field_rules.check_data_length_field_rules(data.len())?;
+            }
+            _ => {
+                return Err(Error::InvalidValidationType(format!(
+                    "Invalid validation type for bytes field: {:#?}",
+                    self.field_type
+                )))
+            }
+        }
+
+        Ok(())
     }
 
     pub fn validate_str(&self, data: &str) -> Result<(), Error> {
@@ -862,6 +922,328 @@ impl<'a> Into<u8> for VTableFieldType<'a> {
             VTableFieldType::Bool => 18,
             VTableFieldType::Struct(_) => 19,
             VTableFieldType::HashMap { key: _, value: _ } => 20, //
+        }
+    }
+}
+
+// Implement DocBufDecodeField for VTableField
+
+impl<'a> DocBufDecodeField<String> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<String, Error> {
+        match self.field_type {
+            VTableFieldType::String | VTableFieldType::HashMap { .. } => {
+                let length =
+                    u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+
+                // Consume the data from the buffer
+                buffer.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES);
+
+                let data = String::from_utf8(buffer.drain(0..length).collect())?;
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+// impl<'a> DocBufDecodeField<&'a str> for VTableField<'a> {
+//     fn decode(&self, buffer: &mut Vec<u8>) -> Result<&'a str, Error> {
+//         match self.field_type {
+//             VTableFieldType::Str => {
+//                 let length =
+//                     u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+
+//                 let data = std::str::from_utf8(
+//                     &buffer[DEFAULT_FIELD_LENGTH_LE_BYTES..DEFAULT_FIELD_LENGTH_LE_BYTES + length],
+//                 )?;
+
+//                 // Consume the data from the buffer
+//                 buffer.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES + length);
+
+//                 Ok(data)
+//             }
+//             _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+//         }
+//     }
+// }
+
+impl<'a> DocBufDecodeField<bool> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<bool, Error> {
+        match self.field_type {
+            VTableFieldType::Bool => {
+                let data = buffer[0] == 1;
+
+                // Consume the data from the buffer
+                buffer.drain(0..1);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<u8> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<u8, Error> {
+        match self.field_type {
+            VTableFieldType::U8 => {
+                let data = buffer[0];
+
+                // Consume the data from the buffer
+                buffer.drain(0..1);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<u16> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<u16, Error> {
+        match self.field_type {
+            VTableFieldType::U16 => {
+                let data = u16::from_le_bytes([buffer[0], buffer[1]]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..2);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<u32> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<u32, Error> {
+        match self.field_type {
+            VTableFieldType::U32 => {
+                let data = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..4);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<u64> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<u64, Error> {
+        match self.field_type {
+            VTableFieldType::U64 | VTableFieldType::USIZE => {
+                let data = u64::from_le_bytes([
+                    buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
+                    buffer[7],
+                ]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..8);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<u128> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<u128, Error> {
+        match self.field_type {
+            VTableFieldType::U128 => {
+                let data = u128::from_le_bytes([
+                    buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
+                    buffer[7], buffer[8], buffer[9], buffer[10], buffer[11], buffer[12],
+                    buffer[13], buffer[14], buffer[15],
+                ]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..16);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<usize> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<usize, Error> {
+        match self.field_type {
+            VTableFieldType::USIZE => {
+                let data = usize::from_le_bytes([
+                    buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
+                    buffer[7],
+                ]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..8);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<i8> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<i8, Error> {
+        match self.field_type {
+            VTableFieldType::I8 => {
+                let data = i8::from_le_bytes([buffer[0]]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..1);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<i16> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<i16, Error> {
+        match self.field_type {
+            VTableFieldType::I16 => {
+                let data = i16::from_le_bytes([buffer[0], buffer[1]]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..2);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<i32> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<i32, Error> {
+        match self.field_type {
+            VTableFieldType::I32 => {
+                let data = i32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..4);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<i64> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<i64, Error> {
+        match self.field_type {
+            VTableFieldType::I64 | VTableFieldType::ISIZE => {
+                let data = i64::from_le_bytes([
+                    buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
+                    buffer[7],
+                ]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..8);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<i128> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<i128, Error> {
+        match self.field_type {
+            VTableFieldType::I128 => {
+                let data = i128::from_le_bytes([
+                    buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
+                    buffer[7], buffer[8], buffer[9], buffer[10], buffer[11], buffer[12],
+                    buffer[13], buffer[14], buffer[15],
+                ]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..16);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<isize> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<isize, Error> {
+        match self.field_type {
+            VTableFieldType::ISIZE => {
+                let data = isize::from_le_bytes([
+                    buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
+                    buffer[7],
+                ]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..8);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<f32> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<f32, Error> {
+        match self.field_type {
+            VTableFieldType::F32 => {
+                let data = f32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..4);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<f64> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<f64, Error> {
+        match self.field_type {
+            VTableFieldType::F64 => {
+                let data = f64::from_le_bytes([
+                    buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
+                    buffer[7],
+                ]);
+
+                // Consume the data from the buffer
+                buffer.drain(0..8);
+
+                Ok(data)
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
+        }
+    }
+}
+
+impl<'a> DocBufDecodeField<Vec<u8>> for VTableField<'a> {
+    fn decode(&self, buffer: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
+        match self.field_type {
+            VTableFieldType::Bytes => {
+                let length =
+                    u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+
+                // Consume the data from the buffer
+                buffer.drain(0..DEFAULT_FIELD_LENGTH_LE_BYTES);
+
+                Ok(buffer.drain(0..length).collect())
+            }
+            _ => Err(Error::DocBufDecodeFieldType(self.field_type.to_string())),
         }
     }
 }

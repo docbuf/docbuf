@@ -29,3 +29,4 @@ syn = { version = "2.0.48", optional = true, features = ["full"] }
 regex = { version = "1.10.3", optional = true }
 serde = "1.0.196"
 thiserror = "1.0.56"
+tracing = "0.1.40"

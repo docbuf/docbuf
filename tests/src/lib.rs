@@ -62,8 +62,12 @@ trait TestHarness<'de>:
         // deserialize
         let doc = Self::from_docbuf(buffer)?;
 
+        assert_eq!(buffer.len(), 0);
+
         // Serialize again
         doc.to_docbuf(buffer)?;
+
+        assert_ne!(buffer.len(), 0);
 
         // Check the buffer length is the same.
         // It is not guaranteed that all the bytes are the same, but the length should be the same.

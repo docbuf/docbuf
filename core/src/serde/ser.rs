@@ -3,6 +3,8 @@ use serde::Serialize;
 use crate::vtable::*;
 use crate::{error::Error, traits::DocBuf, Result};
 
+const DEFAULT_CAPACITY_MULTIPLIER: usize = 10;
+
 #[derive(Debug)]
 pub struct DocBufSerializer<'a> {
     pub vtable: &'static VTable<'static>,
@@ -30,7 +32,9 @@ impl<'a> DocBufSerializer<'a> {
             current_item: None,
             current_field: None,
             previous_item: None,
-            offsets: VTableFieldOffsets::with_capacity(vtable.num_items as usize),
+            offsets: VTableFieldOffsets::with_capacity(
+                vtable.num_items as usize * DEFAULT_CAPACITY_MULTIPLIER,
+            ),
         }
     }
 
@@ -64,6 +68,20 @@ impl<'a> DocBufSerializer<'a> {
     // Encode the &str data into the output vector
     pub fn encode_str(&mut self, data: &str) -> Result<()> {
         self.current_field()?.encode_str(data, &mut self.output)?;
+
+        Ok(())
+    }
+
+    pub fn encode_bytes(&mut self, data: &[u8]) -> Result<()> {
+        self.current_field()?.encode_bytes(data, &mut self.output)?;
+
+        Ok(())
+    }
+
+    pub fn encode_bool(&mut self, data: bool) -> Result<()> {
+        // println!("Encoding Boolean: {:?}", data);
+
+        self.current_field()?.encode_bool(data, &mut self.output)?;
 
         Ok(())
     }
@@ -145,12 +163,12 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
         )))
     }
 
-    fn serialize_bool(self, _v: bool) -> Result<Self::Ok> {
-        unimplemented!("serialize_bool")
+    fn serialize_bool(self, v: bool) -> Result<Self::Ok> {
+        self.encode_bool(v)
     }
 
-    fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok> {
-        unimplemented!("serialize_bytes")
+    fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
+        self.encode_bytes(v)
     }
 
     fn serialize_char(self, _v: char) -> Result<Self::Ok> {
@@ -158,9 +176,7 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok> {
-        self.encode_numeric(NumericValue::F32(v))?;
-
-        Ok(())
+        self.encode_numeric(NumericValue::F32(v))
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok> {
@@ -196,14 +212,16 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
         let field = self.current_field()?;
 
-        // Shortcut validation for byte arrays
-        if let VTableFieldType::Bytes = field.field_type {
-            self.output.push(v);
+        match field.field_type {
+            VTableFieldType::Bytes => {
+                self.output.push(v);
 
-            Ok(())
-        } else {
-            // Encode the u8 as a numeric value
-            self.encode_numeric(NumericValue::U8(v))
+                Ok(())
+            }
+            _ => {
+                // Encode the u8 as a numeric value
+                self.encode_numeric(NumericValue::U8(v))
+            }
         }
     }
 
@@ -311,7 +329,7 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
-        // Encode the number of entries in the map
+        // // Encode the number of entries in the map
         self.encode_map_start(len.unwrap_or_default())?;
 
         Ok(self)
@@ -521,6 +539,8 @@ impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
 
         self.current_field_index = field.field_index;
         self.current_field = Some(field);
+
+        // println!("Field: {:?}", field);
 
         // Serialize the field
         value.serialize(&mut **self)?;
