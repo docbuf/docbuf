@@ -260,7 +260,7 @@ pub fn docbuf_impl_serialization(_input: TokenStream) -> TokenStream {
         }
 
         // Deserialize the byte buffer to a struct
-        fn from_docbuf(buf: &[u8]) -> Result<Self, ::docbuf_core::error::Error> {
+        fn from_docbuf<'a>(buf: &'a mut Vec<u8>) -> Result<Self, ::docbuf_core::error::Error> {
             Ok(::docbuf_core::serde::de::from_docbuf(buf)?)
         }
     };

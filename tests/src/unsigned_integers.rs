@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{SetTestValues, TestHarness};
 
 #[derive(Debug)]
+#[allow(dead_code)]
 enum UnsignedInteger {
     U8(u8),
     U16(u16),
@@ -14,7 +15,7 @@ enum UnsignedInteger {
 }
 
 impl UnsignedInteger {
-    fn set_doc_value<'de, D: TestHarness<'de>>(&self, doc: &mut D) {
+    pub fn set_doc_value<'de, D: TestHarness<'de>>(&self, doc: &mut D) {
         match self {
             UnsignedInteger::U8(value) => doc.set_u8_value(*value),
             UnsignedInteger::U16(value) => doc.set_u16_value(*value),

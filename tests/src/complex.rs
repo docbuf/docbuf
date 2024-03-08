@@ -1,6 +1,6 @@
 use docbuf_core::{
     traits::{DocBuf, DocBufCrypto, DocBufMap},
-    vtable::VTableFieldOffset,
+    // vtable::VTableFieldOffset,
 };
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};
@@ -8,9 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::{SetTestValues, TestHarness};
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
-// #[docbuf {
-
-// }]
 pub struct Complex(Vec<Document>);
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
@@ -77,7 +74,9 @@ pub struct Metadata {
     pub i128_data: i128,
     pub isize_data: isize,
     pub hash_map_data: std::collections::HashMap<String, String>,
+    #[serde(with = "serde_bytes")]
     pub byte_data: Vec<u8>,
+    pub bool_data: bool,
 }
 
 impl PartialEq for Metadata {
@@ -100,6 +99,7 @@ impl PartialEq for Metadata {
             && self.hash_map_data == other.hash_map_data
             && self.signature == other.signature
             && self.byte_data == other.byte_data
+            && self.bool_data == other.bool_data
     }
 }
 
@@ -111,6 +111,7 @@ pub struct Signature {
     #[docbuf {
         length = 32;
     }]
+    #[serde(with = "serde_bytes")]
     pub signature: [u8; 32],
 }
 
@@ -158,6 +159,7 @@ impl Document {
                     }
                     data
                 })(),
+                bool_data: true,
             },
         }
     }
@@ -173,7 +175,7 @@ impl SetTestValues for Document {}
 
 impl<'de> TestHarness<'de> for Document {}
 
-#[test]
+#[test_log::test]
 fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
     let document = Document::dummy();
 
@@ -198,7 +200,7 @@ fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
     Ok(())
 }
 
-#[test]
+#[test_log::test]
 fn test_serialize_hash_map() -> Result<(), docbuf_core::error::Error> {
     let mut map = std::collections::HashMap::new();
     map.insert("0".to_string(), "0".to_string());
@@ -218,7 +220,7 @@ fn test_serialize_hash_map() -> Result<(), docbuf_core::error::Error> {
     Ok(())
 }
 
-#[test]
+#[test_log::test]
 fn test_write_file() -> Result<(), docbuf_core::error::Error> {
     let doc = Document::dummy();
 
@@ -229,7 +231,7 @@ fn test_write_file() -> Result<(), docbuf_core::error::Error> {
     Ok(())
 }
 
-#[test]
+#[test_log::test]
 fn test_docbuf_map() -> Result<(), docbuf_core::error::Error> {
     let document = Document::dummy();
 

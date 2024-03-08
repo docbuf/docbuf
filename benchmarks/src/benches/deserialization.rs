@@ -28,7 +28,7 @@ pub fn benchmark_complex_deserialization_docbuf_map(c: &mut Criterion) {
             "DocBuf Map Deserialization",
             format!("{:?}", buffer.clone()),
         ),
-        &(&vtable, &buffer, &offsets),
+        &(&vtable, &buffer.clone(), &offsets),
         |b, (vtable, buf, off)| {
             b.iter(|| {
                 black_box(
@@ -46,7 +46,7 @@ pub fn benchmark_complex_deserialization_docbuf_map(c: &mut Criterion) {
         |b, buffer| {
             b.iter(|| {
                 black_box(
-                    complex::Document::from_docbuf(buffer)
+                    complex::Document::from_docbuf(&mut buffer.clone())
                         .expect("Failed to deserialize docbuf bytecode")
                         .metadata
                         .signature
