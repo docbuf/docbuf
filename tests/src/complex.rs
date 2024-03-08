@@ -1,6 +1,6 @@
 use docbuf_core::{
     traits::{DocBuf, DocBufCrypto, DocBufMap},
-    vtable::VTableFieldOffset,
+    // vtable::VTableFieldOffset,
 };
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};
@@ -8,9 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::{SetTestValues, TestHarness};
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
-// #[docbuf {
-
-// }]
 pub struct Complex(Vec<Document>);
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]

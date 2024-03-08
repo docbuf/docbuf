@@ -1,3 +1,6 @@
+#![allow(unused_imports)]
+#![allow(dead_code)]
+
 // pub mod benchmarks;
 pub mod complex;
 pub mod strings;

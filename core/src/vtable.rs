@@ -1,11 +1,11 @@
 mod bufmap;
-mod fields;
-mod structs;
+mod field;
+mod item;
 mod table;
 
-pub use bufmap::*;
-pub use fields::*;
-pub use structs::*;
+// pub use bufmap::*;
+pub use field::*;
+pub use item::*;
 pub use table::*;
 
 #[derive(thiserror::Error, Debug)]
@@ -46,6 +46,8 @@ pub enum Error {
     ArrayElementsExceedsMax(usize),
     #[error("Invalid docbuf map field type, expected: {0}")]
     DocBufMapInvalidFieldType(String),
+    #[error("Failed to encode docbuf map field type: {0}")]
+    DocBufEncodeFieldType(String),
     #[error("Failed to decode docbuf map field type: {0}")]
     DocBufDecodeFieldType(String),
 }

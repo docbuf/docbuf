@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [[bench]]
-name = "docbuf_benchmarks"
-path = "src/main.rs"
+name = "benchmarks"
+path = "benches/main.rs"
 harness = false
 
 [dependencies]
