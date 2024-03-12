@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::idl::{
+use super::{
     document::*,
     error::Error,
     lexer::{Logos, Token},
@@ -180,7 +180,7 @@ impl Parser {
                             Some(Token::Import) => {
                                 let span =
                                     parser.context.previous_span.end + 1..tokens.span().start;
-                                let import = source[span].trim().to_string();
+                                let _import = source[span].trim().to_string();
                                 // println!("Import: {:?}", import);
                                 // let import = Self::search_imports(source, Path::new("."))?;
                                 // parser.imports = import;
@@ -503,17 +503,5 @@ mod tests {
         Parser::from_file(&file)?;
 
         Ok(())
-    }
-
-    #[test]
-    fn test_token_stream() {
-        use proc_macro2::TokenStream;
-
-        let file =
-            std::fs::read_to_string("../examples/example.docbuf").expect("Failed to read file");
-
-        let tokens: TokenStream = file.parse().unwrap();
-
-        println!("tokens: {:?}", tokens);
     }
 }
