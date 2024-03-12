@@ -1,4 +1,5 @@
 use docbuf_core::traits::DocBuf;
+use docbuf_db::traits::*;
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};
 

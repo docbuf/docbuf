@@ -1,9 +1,0 @@
-// Document Buffer Version (used by docbuf processor)
-pragma docbuf v1;
-
-// Module name of the documents.
-module my_other_module;
-
-Document MyOtherDocument {
-    item: string,
-}

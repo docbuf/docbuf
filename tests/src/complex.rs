@@ -1,7 +1,5 @@
-use docbuf_core::{
-    traits::{DocBuf, DocBufCrypto, DocBufMap},
-    // vtable::VTableFieldOffset,
-};
+use docbuf_core::traits::{DocBuf, DocBufMap};
+use docbuf_db::traits::*;
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};
 
@@ -20,17 +18,14 @@ pub struct Complex(Vec<Document>);
     // Use the sha256 hash algorithm
     // hash = "sha256";
     html = "path/to/html/template.html";
+    // Path to the database configuration file
+    db_config = "/tmp/.docbuf/db/config.toml";
 }]
 pub struct Document {
-    #[docbuf {
-        // Ignore the title field
-        ignore = true;
-    }]
     pub title: String,
     #[docbuf {
         min_length = 0;
         max_length = 4096;
-        default = "Hello, World!";
     }]
     pub body: String,
     pub footer: String,
@@ -175,7 +170,7 @@ impl SetTestValues for Document {}
 
 impl<'de> TestHarness<'de> for Document {}
 
-#[test_log::test]
+#[test]
 fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
     let document = Document::dummy();
 
@@ -200,7 +195,7 @@ fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
     Ok(())
 }
 
-#[test_log::test]
+#[test]
 fn test_serialize_hash_map() -> Result<(), docbuf_core::error::Error> {
     let mut map = std::collections::HashMap::new();
     map.insert("0".to_string(), "0".to_string());
@@ -220,7 +215,7 @@ fn test_serialize_hash_map() -> Result<(), docbuf_core::error::Error> {
     Ok(())
 }
 
-#[test_log::test]
+#[test]
 fn test_write_file() -> Result<(), docbuf_core::error::Error> {
     let doc = Document::dummy();
 
@@ -231,7 +226,7 @@ fn test_write_file() -> Result<(), docbuf_core::error::Error> {
     Ok(())
 }
 
-#[test_log::test]
+#[test]
 fn test_docbuf_map() -> Result<(), docbuf_core::error::Error> {
     let document = Document::dummy();
 
@@ -239,20 +234,78 @@ fn test_docbuf_map() -> Result<(), docbuf_core::error::Error> {
 
     println!("document: {:?}\n\n", document);
 
-    let offsets = document.to_docbuf(&mut buffer)?;
+    let mut offsets = document.to_docbuf(&mut buffer)?;
 
     println!("Buffer: {:?}\n\n", buffer);
 
     println!("Offsets: {:?}\n\n", offsets);
 
-    let sig_field_data: Vec<u8> = Document::vtable()?.docbuf_map(&buffer, &offsets[4])?;
+    let mut field_data: String = Document::vtable()?.docbuf_map(&buffer, &offsets.as_ref()[0])?;
 
-    println!("Field: {:?}\n\n", sig_field_data);
+    println!("Field: {:?}\n\n", field_data);
 
-    assert_eq!(
-        document.metadata.signature.signature.to_vec(),
-        sig_field_data
-    );
+    assert_eq!(document.title, field_data);
+
+    field_data = String::from("Hello, World!");
+    let offset = offsets.as_ref()[0].clone();
+
+    Document::vtable()?.docbuf_map_replace(&field_data, &mut buffer, &offset, &mut offsets)?;
+
+    let mutated_data: String = Document::vtable()?.docbuf_map(&buffer, &offsets.as_ref()[0])?;
+
+    println!("Mutated Field: {:?}\n\n", mutated_data);
+
+    println!("Updated Offsets: {:?}\n\n", offsets);
+
+    assert_eq!(field_data, mutated_data);
+
+    Ok(())
+}
+
+#[test]
+fn test_vtable_size() -> Result<(), docbuf_core::error::Error> {
+    let vtable = Document::vtable()?;
+
+    // Get the derministic 8-byte id of the vtable
+    let vid = vtable.id().to_string();
+
+    println!("VTable ID: {:?}", vid);
+
+    let page_size = vtable.page_size(None);
+    let avg_size = vtable.avg_size() as usize;
+
+    println!("VTable Size: {:?}", page_size);
+    println!("VTable Avg Size {:?}", avg_size);
+
+    let doc = Document::dummy();
+
+    let mut buffer = vtable.alloc_buf();
+
+    let _offsets = doc.to_docbuf(&mut buffer)?;
+
+    println!("Buffer: {:?}", buffer.len());
+
+    println!("Num page entries: {:?}", page_size % buffer.len());
+
+    let avg_field_size = buffer.len() / vtable.num_fields as usize;
+
+    println!("Avg Field Size: {:?}", avg_field_size);
+
+    Ok(())
+}
+
+#[cfg(feature = "db")]
+#[test]
+fn test_complex_db() -> Result<(), docbuf_db::Error> {
+    use docbuf_db::traits::*;
+
+    let doc = Document::dummy();
+
+    let id = doc.db_insert()?;
+
+    let doc = Document::db_get(id)?;
+
+    println!("Doc: {:?}", doc);
 
     Ok(())
 }
