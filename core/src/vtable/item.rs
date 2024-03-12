@@ -1,87 +1,44 @@
+pub mod structs;
+
 use super::*;
+pub use structs::*;
 
-pub type StructName<'a> = &'a str;
+pub type VTableItemIndex = u8;
 
+/// VTable Items are the only structs or enums
 #[derive(Debug, Clone)]
-pub struct VTableStruct<'a> {
-    pub item_index: VTableItemIndex,
-    pub struct_name: StructName<'a>,
-    pub fields: VTableFields<'a>,
-    pub num_fields: VTableFieldIndex,
+pub enum VTableItem<'a> {
+    Struct(VTableStruct<'a>),
 }
 
-impl<'a> VTableStruct<'a> {
-    pub fn new(struct_name: &'a str, index: Option<u8>) -> Self {
-        Self {
-            item_index: index.unwrap_or_default(),
-            struct_name,
-            fields: VTableFields::new(),
-            num_fields: 0,
-        }
+#[derive(Debug, Clone)]
+pub struct VTableItems<'a>(pub Vec<VTableItem<'a>>);
+
+impl<'a> VTableItems<'a> {
+    pub fn new() -> Self {
+        Self(Vec::with_capacity(256))
     }
 
-    #[inline]
-    pub fn add_field(
-        &mut self,
-        field_type: impl Into<VTableFieldType<'a>>,
-        field_name: &'a str,
-        field_rules: VTableFieldRules,
-    ) {
-        let field_index = self.num_fields;
-
-        let field = VTableField::new(
-            self.item_index,
-            field_type.into(),
-            field_index,
-            field_name,
-            field_rules,
-        );
-        self.fields.add_field(field);
-        self.num_fields += 1;
+    pub fn add_struct(&mut self, vtable_struct: VTableStruct<'a>) {
+        self.0.push(VTableItem::Struct(vtable_struct));
     }
 
-    #[inline]
-    pub fn set_item_index(&mut self, index: VTableItemIndex) {
-        self.item_index = index;
-
-        for field in self.fields.inner_mut() {
-            field.item_index = self.item_index;
-        }
+    pub fn iter(&self) -> std::slice::Iter<'_, VTableItem<'a>> {
+        self.0.iter()
     }
 
-    // Return the field index from the struct
-    #[inline]
-    pub fn field_index_from_name(&self, name: &str) -> Result<VTableFieldIndex, Error> {
-        Ok(self.field_by_name(name)?.field_index)
+    // Inner values
+    pub fn inner(&self) -> &Vec<VTableItem<'a>> {
+        &self.0
     }
 
-    // Return the field by name from the struct
-    #[inline]
-    pub fn field_by_name(&self, name: &str) -> Result<&VTableField, Error> {
-        // println!("Field By Name");
-        self.fields
-            .find_field_by_name(name)
-            .ok_or(Error::FieldNotFound)
+    // Inner values mutable
+    pub fn inner_mut(&mut self) -> &mut Vec<VTableItem<'a>> {
+        &mut self.0
     }
 
-    // Return the field by index from the struct
-    #[inline]
-    pub fn field_by_index(&self, index: &VTableFieldIndex) -> Result<&VTableField, Error> {
-        // println!("Field By Index");
-        for field in self.fields.iter() {
-            if field.field_index == *index {
-                return Ok(field);
-            }
-        }
-
-        Err(Error::FieldNotFound)
-    }
-
-    #[inline]
-    pub fn field_rules_by_index(
-        &self,
-        index: &VTableFieldIndex,
-    ) -> Result<&VTableFieldRules, Error> {
-        self.field_by_index(index).map(|field| &field.field_rules)
+    // Returns the length of items
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 }

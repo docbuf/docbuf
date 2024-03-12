@@ -3,7 +3,9 @@
 mod decode;
 mod encode;
 mod numeric;
+mod offset;
 mod rules;
+#[cfg(feature = "validate")]
 mod validate;
 
 use std::ops::Range;
@@ -17,11 +19,10 @@ use super::*;
 pub use decode::*;
 pub use encode::*;
 pub use numeric::*;
+pub use offset::*;
 pub use rules::*;
+#[cfg(feature = "validate")]
 pub use validate::*;
-
-#[cfg(feature = "regex")]
-use crate::validate::regex::Regex;
 
 // Number of bytes in a gigabyte as a usize
 pub const GIGABYTE: usize = 1024 * 1024 * 1024;
@@ -35,14 +36,6 @@ pub const MAX_MAP_ENTRIES: usize = 256 * 256 * 256;
 // Default field length encoded as 4 le bytes
 pub const DEFAULT_FIELD_LENGTH_LE_BYTES: usize = 4;
 
-pub const U8_MAX: usize = u8::MAX as usize;
-pub const U16_MAX: usize = u16::MAX as usize;
-pub const U32_MAX: usize = u32::MAX as usize;
-pub const U64_MAX: usize = u64::MAX as usize;
-
-// Field Offset range of the resulting document buffer bytes
-pub type VTableFieldOffset = (VTableItemIndex, VTableFieldIndex, Range<usize>);
-pub type VTableFieldOffsets = Vec<VTableFieldOffset>;
 pub type VTableFieldIndex = u8;
 pub type VTableFieldName<'a> = &'a str;
 
@@ -51,26 +44,26 @@ pub struct VTableField<'a> {
     /// The index of the vtable item this field belongs to
     pub item_index: VTableItemIndex,
     /// The type of the field
-    pub field_type: VTableFieldType<'a>,
-    pub field_index: VTableFieldIndex,
-    pub field_name: VTableFieldName<'a>,
-    pub field_rules: VTableFieldRules,
+    pub r#type: VTableFieldType<'a>,
+    pub index: VTableFieldIndex,
+    pub name: VTableFieldName<'a>,
+    pub rules: VTableFieldRules,
 }
 
 impl<'a> VTableField<'a> {
     pub fn new(
         item_index: VTableItemIndex,
-        field_type: VTableFieldType<'a>,
-        field_index: VTableFieldIndex,
-        field_name: VTableFieldName<'a>,
-        field_rules: VTableFieldRules,
+        r#type: VTableFieldType<'a>,
+        index: VTableFieldIndex,
+        name: VTableFieldName<'a>,
+        rules: VTableFieldRules,
     ) -> Self {
         Self {
             item_index,
-            field_type,
-            field_index,
-            field_name,
-            field_rules,
+            r#type,
+            index,
+            name,
+            rules,
         }
     }
 
@@ -142,8 +135,8 @@ impl<'a> VTableFields<'a> {
 
     /// Find a field by its name
     #[inline]
-    pub fn find_field_by_name(&self, field_name: &str) -> Option<&VTableField<'a>> {
-        self.0.iter().find(|field| field.field_name == field_name)
+    pub fn find_field_by_name(&self, name: &str) -> Option<&VTableField<'a>> {
+        self.0.iter().find(|field| field.name == name)
     }
 }
 
@@ -206,8 +199,8 @@ impl<'a> std::fmt::Display for VTableFieldType<'a> {
 }
 
 impl<'a> VTableFieldType<'a> {
-    pub fn is_struct(field_type: impl TryInto<Self>) -> bool {
-        match field_type.try_into() {
+    pub fn is_struct(r#type: impl TryInto<Self>) -> bool {
+        match r#type.try_into() {
             Ok(VTableFieldType::Struct(_)) => true,
             _ => false,
         }

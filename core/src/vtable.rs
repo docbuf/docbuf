@@ -36,6 +36,8 @@ pub enum Error {
     FieldRulesValue(String),
     #[error("Invalid field type for validation: {0}")]
     InvalidValidationType(String),
+    #[error("Invalid vtable ID: {0}")]
+    InvalidVTableId(String),
     #[error("Unable to borrow mutable reference for vtable")]
     VTableBorrowMut,
     #[error("Unable to parse encoded data")]
@@ -50,6 +52,8 @@ pub enum Error {
     DocBufEncodeFieldType(String),
     #[error("Failed to decode docbuf map field type: {0}")]
     DocBufDecodeFieldType(String),
+    #[error(transparent)]
+    Hex(#[from] hex::FromHexError),
 }
 
 #[cfg(test)]

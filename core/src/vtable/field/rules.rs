@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::validate::regex::Regex;
+
 /// Optional rules for a field
 #[derive(Debug, Clone)]
 pub struct VTableFieldRules {
@@ -111,9 +113,14 @@ impl VTableFieldRules {
         self.sign
     }
 
+    #[inline]
+    pub fn check_bool(&self, _data: &bool) -> Result<(), Error> {
+        unimplemented!("Boolean value checking is not yet implemented")
+    }
+
     #[cfg(feature = "regex")]
     #[inline]
-    pub fn check_regex_field_rules(&self, data: &str) -> Result<(), Error> {
+    pub fn check_regex(&self, data: &str) -> Result<(), Error> {
         if let Some(regex_rules) = self.regex() {
             if !regex_rules.is_match(data) {
                 let msg = format!("data does not match regex: {regex_rules}");
@@ -125,7 +132,7 @@ impl VTableFieldRules {
     }
 
     #[inline]
-    pub fn check_data_length_field_rules(&self, length: usize) -> Result<(), Error> {
+    pub fn check_length(&self, length: usize) -> Result<(), Error> {
         if length > MAX_FIELD_SIZE {
             let msg = format!("data size exceeds 1 gigabyte");
             return Err(Error::FieldRulesLength(msg));
@@ -157,7 +164,7 @@ impl VTableFieldRules {
     }
 
     #[inline]
-    pub fn check_numeric_value(&self, value: &NumericValue) -> Result<(), Error> {
+    pub fn check_numeric(&self, value: &NumericValue) -> Result<(), Error> {
         if let Some(max_value) = &self.max_value {
             if value > max_value {
                 let msg = format!("data value exceeds field max value: {:?}", max_value);

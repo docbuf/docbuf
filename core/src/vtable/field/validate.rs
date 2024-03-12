@@ -2,98 +2,97 @@ use super::*;
 
 // Implement DocBufValidate for VTableField
 
-impl<'a> DocBufValidateField<String> for VTableField<'a> {
+impl<'a> DocBufValidateField<String> for VTableFieldRules {
     #[inline]
     fn validate(&self, data: &String) -> Result<(), Error> {
         // Skip validation if no field rules are present
-        if self.field_rules.is_none() {
+        if self.is_none() {
             return Ok(());
         }
 
-        match self.field_type {
-            VTableFieldType::String | VTableFieldType::Str => {
-                // Check for string length rules
-                self.field_rules.check_data_length_field_rules(data.len())?;
+        // Check for string length rules
+        self.check_length(data.len())?;
 
-                // Check for regex rules
-                #[cfg(feature = "regex")]
-                self.field_rules.check_regex_field_rules(data)?;
-            }
-            _ => {
-                return Err(Error::InvalidValidationType(format!(
-                    "Invalid validation type for string field: {:#?}",
-                    self.field_type
-                )))
-            }
-        }
+        // Check for regex rules
+        #[cfg(feature = "regex")]
+        self.check_regex(data)?;
 
         Ok(())
     }
 }
 
-impl<'a> DocBufValidateField<&str> for VTableField<'a> {
+impl<'a> DocBufValidateField<&str> for VTableFieldRules {
     #[inline]
     fn validate(&self, data: &&str) -> Result<(), Error> {
         // Skip validation if no field rules are present
-        if self.field_rules.is_none() {
+        if self.is_none() {
             return Ok(());
         }
 
-        match self.field_type {
-            VTableFieldType::String | VTableFieldType::Str => {
-                // Check for string length rules
-                self.field_rules.check_data_length_field_rules(data.len())?;
+        // Check for string length rules
+        self.check_length(data.len())?;
 
-                // Check for regex rules
-                #[cfg(feature = "regex")]
-                self.field_rules.check_regex_field_rules(data)?;
-            }
-            _ => {
-                return Err(Error::InvalidValidationType(format!(
-                    "Invalid validation type for str field: {:#?}",
-                    self.field_type
-                )))
-            }
-        }
+        // Check for regex rules
+        #[cfg(feature = "regex")]
+        self.check_regex(data)?;
 
         Ok(())
     }
 }
 
-impl<'a> DocBufValidateField<&[u8]> for VTableField<'a> {
+impl<'a> DocBufValidateField<Vec<u8>> for VTableFieldRules {
+    #[inline]
+    fn validate(&self, data: &Vec<u8>) -> Result<(), Error> {
+        // Skip validation if no field rules are present
+        if self.is_none() {
+            return Ok(());
+        }
+
+        // Check for byte length rules
+        self.check_length(data.len())?;
+
+        Ok(())
+    }
+}
+
+impl<'a> DocBufValidateField<&[u8]> for VTableFieldRules {
     #[inline]
     fn validate(&self, data: &&[u8]) -> Result<(), Error> {
         // Skip validation if no field rules are present
-        if self.field_rules.is_none() {
+        if self.is_none() {
             return Ok(());
         }
 
-        match self.field_type {
-            VTableFieldType::Bytes => {
-                // Check for byte length rules
-                self.field_rules.check_data_length_field_rules(data.len())?;
-            }
-            _ => {
-                return Err(Error::InvalidValidationType(format!(
-                    "Invalid validation type for bytes field: {:#?}",
-                    self.field_type
-                )))
-            }
-        }
+        // Check for byte length rules
+        self.check_length(data.len())?;
 
         Ok(())
     }
 }
 
-impl<'a> DocBufValidateField<NumericValue> for VTableField<'a> {
+impl<'a> DocBufValidateField<NumericValue> for VTableFieldRules {
     fn validate(&self, value: &NumericValue) -> Result<(), crate::vtable::Error> {
         // Skip validation if no field rules are present
-        if self.field_rules.is_none() {
+        if self.is_none() {
             return Ok(());
         }
 
         // Check for numeric value rules
-        self.field_rules.check_numeric_value(value)?;
+        self.check_numeric(value)?;
+
+        Ok(())
+    }
+}
+
+impl<'a> DocBufValidateField<bool> for VTableFieldRules {
+    fn validate(&self, value: &bool) -> Result<(), crate::vtable::Error> {
+        // Skip validation if no field rules are present
+        if self.is_none() {
+            return Ok(());
+        }
+
+        // Check for boolean value rules
+        self.check_bool(value)?;
 
         Ok(())
     }
