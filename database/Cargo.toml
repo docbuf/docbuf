@@ -1,0 +1,10 @@
+[package]
+name = "docbuf-db"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+docbuf-core = { path = "../core", features = ["full"] }
+serde = "1.0.196"
+thiserror = "1.0.57"
+toml = { version = "0.8.10" }
