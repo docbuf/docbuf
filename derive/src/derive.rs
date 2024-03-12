@@ -1,84 +1,132 @@
-use std::collections::HashMap;
 use std::str::FromStr;
 
-use proc_macro2::{Ident, Span, TokenStream, TokenTree};
+use std::collections::{HashMap, HashSet};
+
+use docbuf_core::vtable::*;
+
+use proc_macro2::{token_stream, Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use syn::{DeriveInput, ItemStruct};
 
-use crate::error::Error;
+#[derive(thiserror::Error, Debug)]
+pub enum Error {}
 
-// TODO: Replace with OID
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum DocBufCryptoAlgorithm {
     Ed25519,
 }
 
-// TODO: Replace with external library
-#[derive(Debug, Clone)]
+impl From<&str> for DocBufCryptoAlgorithm {
+    fn from(algo: &str) -> Self {
+        match algo {
+            "ed25519" => DocBufCryptoAlgorithm::Ed25519,
+            _ => unimplemented!("Unsupported crypto algorithm: {}", algo),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum HashAlgorithm {
     Sha256,
 }
 
-#[derive(Debug, Clone)]
+impl From<&str> for HashAlgorithm {
+    fn from(algo: &str) -> Self {
+        match algo {
+            "sha256" => HashAlgorithm::Sha256,
+            _ => unimplemented!("Unsupported hash algorithm: {}", algo),
+        }
+    }
+}
+
+pub type HtmlTemplatePath = String;
+
+pub type DbConfigPath = String;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum DocBufOpt {
     Sign(bool),
     Crypto(DocBufCryptoAlgorithm),
     Hash(HashAlgorithm),
-    Html(bool),
+    Html(HtmlTemplatePath),
+    DbConfig(DbConfigPath),
 }
 
 #[derive(Debug, Clone)]
-pub struct DocBufOpts(HashMap<String, DocBufOpt>);
+pub struct DocBufOpts(HashSet<DocBufOpt>);
 
-impl From<TokenStream> for DocBufOpts {
-    fn from(input: TokenStream) -> Self {
-        let mut iter = input.into_iter();
+impl DocBufOpts {
+    pub fn db_path(&self) -> Option<&str> {
+        self.0.iter().find_map(|opt| match opt {
+            DocBufOpt::DbConfig(path) => Some(path.as_str()),
+            _ => None,
+        })
+    }
+
+    pub fn db_mngr(&self) -> TokenStream {
+        self.db_path()
+            .map(|path| {
+                quote! {
+                    ::docbuf_db::DocBufDbManager::from_config(#path)?
+                }
+            })
+            .unwrap_or(quote! {
+                ::docbuf_db::DocBufDbManager::default()
+            })
+    }
+}
+
+impl<K, V> From<(K, V)> for DocBufOpt
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    fn from((key, value): (K, V)) -> Self {
+        match (key.as_ref(), value.as_ref()) {
+            ("sign", v) => DocBufOpt::Sign(v == "true"),
+            ("crypto", algo) => DocBufOpt::Crypto(DocBufCryptoAlgorithm::from(algo)),
+            ("hash", algo) => DocBufOpt::Hash(HashAlgorithm::from(algo)),
+            ("html", template) => DocBufOpt::Html(template.to_string()),
+            ("db_config", path) => {
+                // unimplemented!("Db Config Path: {:?}", path);
+                DocBufOpt::DbConfig(path.to_string())
+            }
+            _ => {
+                unimplemented!("Unsupported DocBuf options key: {}", key.as_ref());
+            }
+        }
+    }
+}
+
+impl From<&mut token_stream::IntoIter> for DocBufOpt {
+    fn from(iter: &mut token_stream::IntoIter) -> Self {
+        let key = iter.nth(0);
+        let value = iter.nth(1);
+
+        // drain the next token
+        iter.next();
+
+        match (key, value) {
+            (Some(k), Some(v)) => {
+                let key = k.to_string().replace("\"", "");
+                let value = v.to_string().replace("\"", "");
+                Self::from((key, value))
+            }
+            _ => {
+                panic!("Failed to parse DocBuf options from token tree.")
+            }
+        }
+    }
+}
+
+impl From<&TokenStream> for DocBufOpts {
+    fn from(input: &TokenStream) -> Self {
+        let mut iter = input.clone().into_iter();
         let mut num_attr = iter.clone().count() / 4;
-        let key_index = 0;
-        let value_index = 1;
-        let mut opts = HashMap::new();
+        let mut opts = HashSet::new();
 
         while num_attr > 0 {
-            let mut span_iter = {
-                let mut span = Vec::new();
-
-                for _ in 0..4 {
-                    span.push(iter.next().expect("Invalid attribute format."));
-                }
-
-                span.into_iter()
-            };
-
-            if let Some(key) = span_iter.nth(key_index) {
-                if let Some(value) = span_iter.nth(value_index) {
-                    let key = key.to_string().replace("\"", "");
-                    let value = value.to_string().replace("\"", "");
-
-                    let value = match key.as_str() {
-                        "sign" => DocBufOpt::Sign("true" == value.as_str()),
-                        "crypto" => match value.as_str() {
-                            "ed25519" => DocBufOpt::Crypto(DocBufCryptoAlgorithm::Ed25519),
-                            _ => {
-                                panic!("`crypto` options currently only supports `ed25519` value type.")
-                            }
-                        },
-                        "hash" => {
-                            match value.as_str() {
-                                "sha256" => DocBufOpt::Hash(HashAlgorithm::Sha256),
-                                _ => {
-                                    panic!("`hash` options currently only supports `sha256` value type.")
-                                }
-                            }
-                        }
-                        "html" => DocBufOpt::Html("true" == value.as_str()),
-                        k => {
-                            unimplemented!("Unsupported key: {}", k);
-                        }
-                    };
-
-                    opts.insert(key, value);
-                }
-            }
+            opts.insert(DocBufOpt::from(&mut iter));
 
             num_attr -= 1;
         }
@@ -92,10 +140,8 @@ pub fn docbuf_attr(_attr: TokenStream, _item: TokenStream) -> TokenStream {
     TokenStream::new()
 }
 
-pub fn docbuf_item(item: TokenStream) -> TokenStream {
-    let name = parse_item_name(&item);
-    let fields = parse_item_fields(&item);
-    let lifetimes = parse_item_lifetimes(&item);
+pub fn docbuf_item(name: &TokenStream, lifetimes: &TokenStream, item: &TokenStream) -> TokenStream {
+    let fields = parse_item_fields(item);
 
     let output = quote! {
         pub struct #name #lifetimes {
@@ -106,17 +152,9 @@ pub fn docbuf_item(item: TokenStream) -> TokenStream {
     TokenStream::from(output)
 }
 
-pub fn docbuf_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let name = parse_item_name(&item);
-
-    // let mut options = DocBufOpts::from(attr.clone());
-
-    // let crypto_methods = docbuf_impl_crypto(&name, &mut options);
-
-    let lifetimes = parse_item_lifetimes(&item);
-
-    let serialization_methods = docbuf_impl_serialization(item.clone());
-    let vtable = docbuf_impl_vtable(item.clone());
+pub fn docbuf_impl(name: &TokenStream, lifetimes: &TokenStream, item: &TokenStream) -> TokenStream {
+    let serialization_methods = docbuf_impl_serialization();
+    let vtable = docbuf_impl_vtable(&name, &item);
 
     let output = quote! {
         impl #lifetimes ::docbuf_core::traits::DocBuf for #name #lifetimes {
@@ -128,6 +166,7 @@ pub fn docbuf_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
             // VTable
             #vtable
         }
+
     };
 
     TokenStream::from(output)
@@ -136,17 +175,15 @@ pub fn docbuf_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
 // Impl docbuf signing for the input struct
 pub fn docbuf_impl_crypto(
     name: &TokenStream,
-    item: &TokenStream,
-    options: &mut DocBufOpts,
+    lifetimes: &TokenStream,
+    options: &DocBufOpts,
 ) -> TokenStream {
     let mut output = Vec::new();
 
     // Check if the sign option is present
-    if let Some(DocBufOpt::Sign(true)) = options.0.get("sign") {
-        let lifetimes = parse_item_lifetimes(item);
-
+    if options.0.contains(&DocBufOpt::Sign(true)) {
         output.push(quote! {
-            impl #lifetimes ::docbuf_core::traits::DocBufCrypto for #name #lifetimes { }
+            impl #lifetimes ::docbuf_core::traits::DocBufCrypto for #name #lifetimes {}
         });
     }
 
@@ -155,9 +192,91 @@ pub fn docbuf_impl_crypto(
     }
 }
 
-pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
-    let name = parse_item_name(&item);
+pub fn docbuf_db_impl(
+    name: &TokenStream,
+    lifetimes: &TokenStream,
+    options: &DocBufOpts,
+) -> TokenStream {
+    #[cfg(not(feature = "db"))]
+    return TokenStream::new();
 
+    // Check if the db_config option is present
+    let db_mngr = options.db_mngr();
+
+    quote! {
+        impl #lifetimes ::docbuf_db::DocBufDb for #name #lifetimes {
+            type Db = ::docbuf_db::DocBufDbManager;
+
+            /// The unique document id type.
+            type DbDocId = [u8; 16];
+
+            /// The predicate type used for querying the database.
+            type Predicate = ();
+
+            /// Return a database client.
+            fn db() -> Result<Self::Db, ::docbuf_db::Error> {
+                Ok(#db_mngr)
+            }
+
+            fn db_doc_id(&self) -> Result<Option<Self::DbDocId>, ::docbuf_db::Error> {
+                use ::docbuf_db::DocBufDbMngr;
+                let db = Self::db()?;
+
+                db.db_doc_id(self)
+            }
+
+            /// Write a document into the database.
+            /// This will return the document id.
+            fn db_insert(&self) -> Result<Self::DbDocId, ::docbuf_db::Error> {
+                use ::docbuf_db::DocBufDbMngr;
+                let db = Self::db()?;
+
+                db.db_insert(self)
+            }
+
+            /// Return all documents in the database.
+            fn db_all() -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
+            /// Read documents in the database given a predicate.
+            fn db_find(predicate: Self::Predicate) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
+            /// Get a document from the database.
+            fn db_get(id: Self::DbDocId) -> Result<Self::Doc, ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
+            /// Update a document in the database.
+            fn db_update(&self) -> Result<(), ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
+            /// Delete a document from the database.
+            fn db_delete(self) -> Result<Self::Doc, ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
+            /// Return the number of documents in the database.
+            fn db_count() -> Result<usize, ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
+            /// Return the number of documents in the database given a predicate.
+            fn db_count_where(
+                vtable_id: &::docbuf_core::vtable::VTableId,
+                predicate: Self::Predicate,
+            ) -> Result<usize, ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
+        }
+    }
+}
+
+pub fn docbuf_impl_vtable(name: &TokenStream, item: &TokenStream) -> TokenStream {
     let ast: ItemStruct = syn::parse(item.to_owned().into()).expect("Failed to parse item");
 
     let fields = ast.fields.into_iter().collect::<Vec<_>>();
@@ -167,7 +286,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
         let ty = field.ty.to_token_stream();
         let rules = parse_field_rules(&field).expect("Failed to parse field rules");
 
-        match crate::vtable::VTableFieldType::is_struct(ty.to_string().as_ref()) {
+        match VTableFieldType::is_struct(ty.to_string().as_ref()) {
             true => {
                 let table_name = format!("{}_vtable", ty.to_string()).to_lowercase();
                 let table_name_var = Ident::new(&table_name, Span::call_site());
@@ -182,7 +301,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                     for vtable_item in #table_name_var.items.iter() {
                         match vtable_item {
                             ::docbuf_core::vtable::VTableItem::Struct(#struct_name_var) => {
-                                let name = #struct_name_var.struct_name;
+                                let name = #struct_name_var.name;
                                 if name == stringify!(#ty) {
                                     let field_type = ::docbuf_core::vtable::VTableFieldType::Struct(name);
 
@@ -200,8 +319,6 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
                     // Merge the vtable with the input vtable
                     vtable.merge_vtable(#table_name_var);
                 };
-
-
 
                 scope
             },
@@ -221,7 +338,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
             static VTABLE: ::std::sync::OnceLock<::docbuf_core::vtable::VTable> = ::std::sync::OnceLock::new();
 
             let vtable = VTABLE.get_or_init(||  {
-                let mut vtable = ::docbuf_core::vtable::VTable::new();
+                let mut vtable = ::docbuf_core::vtable::VTable::new(stringify!(#name));
 
                 let mut vtable_struct = ::docbuf_core::vtable::VTableStruct::new(stringify!(#name), None);
 
@@ -230,8 +347,8 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 
                 // Sorting is required to ensure the structs are added in a consistent order
                 vtable.items.inner_mut().sort_by(|a, b| match (a, b) {
-                    (::docbuf_core::vtable::VTableItem::Struct(a), ::docbuf_core::vtable::VTableItem::Struct(b)) => a.struct_name
-                        .cmp(&b.struct_name)
+                    (::docbuf_core::vtable::VTableItem::Struct(a), ::docbuf_core::vtable::VTableItem::Struct(b)) => a.name
+                        .cmp(&b.name)
                         .then(a.item_index.cmp(&b.item_index)),
                     _ => std::cmp::Ordering::Equal,
                 });
@@ -250,7 +367,7 @@ pub fn docbuf_impl_vtable(item: TokenStream) -> TokenStream {
 }
 
 // Impl docbuf serialization and deserialization for the input struct
-pub fn docbuf_impl_serialization(_input: TokenStream) -> TokenStream {
+pub fn docbuf_impl_serialization() -> TokenStream {
     let output = quote! {
         // Serialize the struct to a byte buffer
         fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<::docbuf_core::vtable::VTableFieldOffsets, ::docbuf_core::error::Error> {
@@ -268,44 +385,22 @@ pub fn docbuf_impl_serialization(_input: TokenStream) -> TokenStream {
     TokenStream::from(output)
 }
 
-pub fn docbuf_required_macros() -> TokenStream {
-    let macros = vec![
-        "std::fmt::Debug",
-        "Clone",
-        "::serde::Serialize",
-        "::serde::Deserialize",
-    ]
-    .join(", ");
-
-    let macros = TokenStream::from_str(&macros).unwrap();
-
-    let output = quote! {
-        #[derive(#macros)]
-    };
-
-    output
-}
-
 pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
-    let mut options = DocBufOpts::from(attr.clone());
+    let lifetimes = parse_item_lifetimes(&item);
 
-    // Required derive macros
-    // let derive_macros = docbuf_required_macros();
+    let options = DocBufOpts::from(&attr);
 
-    // let attr_docbuf = docbuf_attr(attr.clone(), item.clone());
-    // parse the inner field attributes of the item
-    let item_docbuf = docbuf_item(item.clone());
-
-    // Add crypto methods from the options
-    let crypto_methods = docbuf_impl_crypto(&name, &item, &mut options);
+    let item_docbuf = docbuf_item(&name, &lifetimes, &item);
+    let docbuf_methods = docbuf_impl(&name, &lifetimes, &item);
+    let crypto_methods = docbuf_impl_crypto(&name, &lifetimes, &options);
+    let db_methods = docbuf_db_impl(&name, &lifetimes, &options);
 
     let output = quote! {
-        // #attr_docbuf
-        // #derive_macros
         #item_docbuf
-
+        #docbuf_methods
         #crypto_methods
+        #db_methods
     };
 
     TokenStream::from(output)

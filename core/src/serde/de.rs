@@ -56,7 +56,7 @@ impl<'de> DocBufDeserializer<'de> {
 
                 let field = s.field_by_index(&self.current_field_index)?;
 
-                if let VTableFieldType::Struct(_) = field.field_type {
+                if let VTableFieldType::Struct(_) = field.r#type {
                     if !self.has_descended {
                         self.current_item_index -= 1;
                         self.current_field_index = 0;
@@ -162,7 +162,7 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
         let field = self.current_field()?;
 
         // Set the hash map field items to the length of the data.
-        if let VTableFieldType::HashMap { .. } = &field.field_type {
+        if let VTableFieldType::HashMap { .. } = &field.r#type {
             match self.remaining_map_entries {
                 None => {
                     self.remaining_map_entries = Some(u32::from_le_bytes([
@@ -194,7 +194,7 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
         let value = seed.deserialize(&mut **self);
 
         // Decrement the remaining field items if it is set
-        if let VTableFieldType::HashMap { .. } = &self.current_field()?.field_type {
+        if let VTableFieldType::HashMap { .. } = &self.current_field()?.r#type {
             // Decrement the remaining field items if it is set
             self.remaining_map_entries.as_mut().map(|x| *x -= 1);
         };
@@ -216,7 +216,7 @@ impl<'de> SeqAccess<'de> for DocBufDeserializer<'de> {
 
         let field = self.current_field()?;
 
-        if let VTableFieldType::Struct(_) = &field.field_type {
+        if let VTableFieldType::Struct(_) = &field.r#type {
             self.next_field()?;
         }
 
@@ -232,7 +232,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let field = self.current_field()?;
-        match &field.field_type {
+        match &field.r#type {
             VTableFieldType::Struct(_) => {
                 self.next_field()?;
                 self.deserialize_map(visitor)
@@ -564,10 +564,10 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     {
         let field = self.current_field()?;
 
-        match &field.field_type {
+        match &field.r#type {
             VTableFieldType::Struct(_) => {
                 self.next_field()?;
-                visitor.visit_str(field.field_name)
+                visitor.visit_str(field.name)
             }
             VTableFieldType::HashMap { key, .. } => match key.as_ref() {
                 VTableFieldType::String => {
@@ -580,7 +580,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
                     unimplemented!("deserialize_identifier for hash map key type: {:?}", key);
                 }
             },
-            _ => visitor.visit_str(field.field_name),
+            _ => visitor.visit_str(field.name),
         }
     }
 

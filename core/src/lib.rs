@@ -1,7 +1,8 @@
+// #[cfg(feature = "db")]
+// pub mod database;
 pub mod error;
-// pub mod idl;
-#[cfg(feature = "macros")]
-pub mod macros;
+// #[cfg(feature = "macros")]
+// pub mod macros;
 pub mod serde;
 pub mod traits;
 pub mod vtable;

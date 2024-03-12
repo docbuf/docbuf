@@ -3,7 +3,7 @@ pub enum Error {
     #[cfg(feature = "std")]
     /// IO Error Type
     #[error(transparent)]
-    IO(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     // #[error(transparent)]
     // IDL(#[from] crate::idl::error::Error),
     /// Serde Error Type
@@ -22,6 +22,9 @@ pub enum Error {
     FromUtf8(#[from] std::string::FromUtf8Error),
     #[error("Failed to create initial buffer allocation")]
     FailedToCreateBuffer,
+    // #[cfg(feature = "db")]
+    // #[error(transparent)]
+    // Database(#[from] crate::database::Error),
 }
 
 impl serde::ser::Error for Error {

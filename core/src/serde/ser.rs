@@ -100,7 +100,7 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
         for vtable_item in self.vtable.items.iter() {
             match vtable_item {
                 VTableItem::Struct(vtable_struct) => {
-                    if vtable_struct.struct_name == name {
+                    if vtable_struct.name == name {
                         self.previous_item_index = self.current_item_index;
                         self.current_item_index = vtable_struct.item_index;
                         self.previous_item = self.current_item;
@@ -311,7 +311,7 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
         let field = self.current_field()?;
 
-        if let VTableFieldType::Bytes = field.field_type {
+        if let VTableFieldType::Bytes = field.r#type {
             // Encode the length of the byte array
             self.encode_array_start(len)?;
         }
@@ -513,7 +513,7 @@ impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
             },
         };
 
-        self.current_field_index = field.field_index;
+        self.current_field_index = field.index;
         self.current_field = Some(field);
 
         // Serialize the field

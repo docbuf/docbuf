@@ -100,12 +100,23 @@ pub trait DocBufCrypto: DocBuf {
 /// This trait is used by the vtable to read a field from the
 /// document buffer, rather than deserializing the entire document.
 pub trait DocBufMap<T> {
-    // Read a field from the document buffer, given the field offset.
+    /// Read a field from the document buffer, given the field offset.
     fn docbuf_map(
         &self,
         buffer: &[u8],
         offset: &VTableFieldOffset,
     ) -> Result<T, crate::vtable::Error>;
+
+    /// Replace a field from the document buffer, given the field offset index, and return the new offets.
+    /// This will shift the buffer to the right if the new field is larger than the old one. Conversely,
+    /// this will shift the buffer to the left if the new field is smaller than the old one.
+    fn docbuf_map_replace(
+        &self,
+        new_value: &T,
+        buffer: &mut Vec<u8>,
+        offset: &VTableFieldOffset,
+        offsets: &mut VTableFieldOffsets,
+    ) -> Result<(), crate::vtable::Error>;
 }
 
 /// DocBufEncodeField is a trait used to serialize a field to the document buffer.

@@ -1,0 +1,16 @@
+[package]
+name = "docbuf-derive"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["full"]
+full = ["db"]
+db = []
+
+[dependencies]
+docbuf-core = { path = "../core", features = ["full"] }
+proc-macro2 = { version = "1.0.78" }
+quote = { version = "1.0.35" }
+syn = { version = "2.0.48", features = ["full"] }
+thiserror = "1.0.57"
