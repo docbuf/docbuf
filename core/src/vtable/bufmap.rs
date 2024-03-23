@@ -2,7 +2,7 @@ use super::*;
 
 use crate::traits::{DocBufMap, DocBufValidateField};
 
-impl DocBufMap<String> for &'static VTable<'static> {
+impl DocBufMap<String> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<String, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -45,7 +45,7 @@ impl DocBufMap<String> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<Vec<u8>> for &'static VTable<'static> {
+impl DocBufMap<Vec<u8>> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<Vec<u8>, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -87,7 +87,7 @@ impl DocBufMap<Vec<u8>> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<u8> for &'static VTable<'static> {
+impl DocBufMap<u8> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<u8, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -114,7 +114,7 @@ impl DocBufMap<u8> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<u16> for &'static VTable<'static> {
+impl DocBufMap<u16> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<u16, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -143,7 +143,7 @@ impl DocBufMap<u16> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<u32> for &'static VTable<'static> {
+impl DocBufMap<u32> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<u32, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -172,7 +172,7 @@ impl DocBufMap<u32> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<u64> for &'static VTable<'static> {
+impl DocBufMap<u64> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<u64, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -203,7 +203,7 @@ impl DocBufMap<u64> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<usize> for &'static VTable<'static> {
+impl DocBufMap<usize> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<usize, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -234,7 +234,7 @@ impl DocBufMap<usize> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<i8> for &'static VTable<'static> {
+impl DocBufMap<i8> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<i8, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -261,7 +261,7 @@ impl DocBufMap<i8> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<i16> for &'static VTable<'static> {
+impl DocBufMap<i16> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<i16, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -290,7 +290,7 @@ impl DocBufMap<i16> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<i32> for &'static VTable<'static> {
+impl DocBufMap<i32> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<i32, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -319,7 +319,7 @@ impl DocBufMap<i32> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<i64> for &'static VTable<'static> {
+impl DocBufMap<i64> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<i64, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -350,7 +350,7 @@ impl DocBufMap<i64> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<isize> for &'static VTable<'static> {
+impl DocBufMap<isize> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<isize, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -381,7 +381,7 @@ impl DocBufMap<isize> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<f32> for &'static VTable<'static> {
+impl DocBufMap<f32> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<f32, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -410,7 +410,7 @@ impl DocBufMap<f32> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<f64> for &'static VTable<'static> {
+impl DocBufMap<f64> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<f64, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -441,7 +441,7 @@ impl DocBufMap<f64> for &'static VTable<'static> {
     }
 }
 
-impl DocBufMap<bool> for &'static VTable<'static> {
+impl DocBufMap<bool> for &'static VTable {
     #[inline]
     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<bool, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
@@ -468,7 +468,7 @@ impl DocBufMap<bool> for &'static VTable<'static> {
     }
 }
 
-// impl DocBufMap<&str> for &'static VTable<'static> {
+// impl DocBufMap<&str> for &'static VTable {
 //     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<&&str, Error> {
 //         let field = self.get_field_by_offset_index(offset.0)?;
 
@@ -487,7 +487,7 @@ impl DocBufMap<bool> for &'static VTable<'static> {
 //     }
 // }
 
-// impl DocBufMap<&[u8]> for &'static VTable<'static> {
+// impl DocBufMap<&[u8]> for &'static VTable {
 //     fn docbuf_map(&self, buffer: &[u8], offset: &VTableFieldOffset) -> Result<&&[u8], Error> {
 //         let field = self.get_field_by_offset_index(offset.0)?;
 

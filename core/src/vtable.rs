@@ -54,6 +54,8 @@ pub enum Error {
     DocBufDecodeFieldType(String),
     #[error(transparent)]
     Hex(#[from] hex::FromHexError),
+    #[error(transparent)]
+    Uuid(#[from] uuid::Error),
 }
 
 #[cfg(test)]

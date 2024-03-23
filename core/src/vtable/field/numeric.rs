@@ -1,7 +1,7 @@
 use super::*;
 
 /// Value enum for the field type
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum NumericValue {
     U8(u8),
     U16(u16),

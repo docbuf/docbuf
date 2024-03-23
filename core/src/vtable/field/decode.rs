@@ -2,9 +2,10 @@ use super::*;
 
 // Implement DocBufDecodeField for VTableField
 
-impl<'a> DocBufDecodeField<String> for VTableField<'a> {
+impl DocBufDecodeField<String> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<String, Error> {
         match self.r#type {
+            // VTableFieldType::Uuid => {},
             VTableFieldType::String | VTableFieldType::HashMap { .. } => {
                 let length =
                     u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
@@ -21,7 +22,7 @@ impl<'a> DocBufDecodeField<String> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<bool> for VTableField<'a> {
+impl DocBufDecodeField<bool> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<bool, Error> {
         match self.r#type {
             VTableFieldType::Bool => {
@@ -37,10 +38,10 @@ impl<'a> DocBufDecodeField<bool> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<u8> for VTableField<'a> {
+impl DocBufDecodeField<u8> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<u8, Error> {
         match self.r#type {
-            VTableFieldType::U8 => {
+            VTableFieldType::U8 | VTableFieldType::Uuid | VTableFieldType::Bytes => {
                 let data = buffer[0];
 
                 // Consume the data from the buffer
@@ -53,7 +54,7 @@ impl<'a> DocBufDecodeField<u8> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<u16> for VTableField<'a> {
+impl DocBufDecodeField<u16> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<u16, Error> {
         match self.r#type {
             VTableFieldType::U16 => {
@@ -69,7 +70,7 @@ impl<'a> DocBufDecodeField<u16> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<u32> for VTableField<'a> {
+impl DocBufDecodeField<u32> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<u32, Error> {
         match self.r#type {
             VTableFieldType::U32 => {
@@ -85,7 +86,7 @@ impl<'a> DocBufDecodeField<u32> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<u64> for VTableField<'a> {
+impl DocBufDecodeField<u64> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<u64, Error> {
         match self.r#type {
             VTableFieldType::U64 | VTableFieldType::USIZE => {
@@ -104,9 +105,13 @@ impl<'a> DocBufDecodeField<u64> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<u128> for VTableField<'a> {
+impl DocBufDecodeField<u128> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<u128, Error> {
         match self.r#type {
+            VTableFieldType::Uuid => {
+                unimplemented!("VTableFieldType::Uuid")
+            }
+
             VTableFieldType::U128 => {
                 let data = u128::from_le_bytes([
                     buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
@@ -124,7 +129,7 @@ impl<'a> DocBufDecodeField<u128> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<usize> for VTableField<'a> {
+impl DocBufDecodeField<usize> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<usize, Error> {
         match self.r#type {
             VTableFieldType::USIZE => {
@@ -143,7 +148,7 @@ impl<'a> DocBufDecodeField<usize> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<i8> for VTableField<'a> {
+impl DocBufDecodeField<i8> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<i8, Error> {
         match self.r#type {
             VTableFieldType::I8 => {
@@ -159,7 +164,7 @@ impl<'a> DocBufDecodeField<i8> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<i16> for VTableField<'a> {
+impl DocBufDecodeField<i16> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<i16, Error> {
         match self.r#type {
             VTableFieldType::I16 => {
@@ -175,7 +180,7 @@ impl<'a> DocBufDecodeField<i16> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<i32> for VTableField<'a> {
+impl DocBufDecodeField<i32> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<i32, Error> {
         match self.r#type {
             VTableFieldType::I32 => {
@@ -191,7 +196,7 @@ impl<'a> DocBufDecodeField<i32> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<i64> for VTableField<'a> {
+impl DocBufDecodeField<i64> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<i64, Error> {
         match self.r#type {
             VTableFieldType::I64 | VTableFieldType::ISIZE => {
@@ -210,7 +215,7 @@ impl<'a> DocBufDecodeField<i64> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<i128> for VTableField<'a> {
+impl DocBufDecodeField<i128> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<i128, Error> {
         match self.r#type {
             VTableFieldType::I128 => {
@@ -230,7 +235,7 @@ impl<'a> DocBufDecodeField<i128> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<isize> for VTableField<'a> {
+impl DocBufDecodeField<isize> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<isize, Error> {
         match self.r#type {
             VTableFieldType::ISIZE => {
@@ -249,7 +254,7 @@ impl<'a> DocBufDecodeField<isize> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<f32> for VTableField<'a> {
+impl DocBufDecodeField<f32> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<f32, Error> {
         match self.r#type {
             VTableFieldType::F32 => {
@@ -265,7 +270,7 @@ impl<'a> DocBufDecodeField<f32> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<f64> for VTableField<'a> {
+impl DocBufDecodeField<f64> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<f64, Error> {
         match self.r#type {
             VTableFieldType::F64 => {
@@ -284,7 +289,7 @@ impl<'a> DocBufDecodeField<f64> for VTableField<'a> {
     }
 }
 
-impl<'a> DocBufDecodeField<Vec<u8>> for VTableField<'a> {
+impl DocBufDecodeField<Vec<u8>> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
         match self.r#type {
             VTableFieldType::Bytes => {

@@ -91,7 +91,7 @@ impl AsRef<Vec<VTableFieldOffset>> for VTableFieldOffsets {
     }
 }
 
-impl<'a> VTableField<'a> {
+impl VTableField {
     #[inline]
     pub fn as_offset(&self, range: Range<usize>) -> VTableFieldOffset {
         VTableFieldOffset((self.item_index, self.index), range)

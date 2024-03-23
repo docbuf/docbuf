@@ -2,7 +2,7 @@ use super::*;
 
 // Implement DocBufEncodeField for VTableField
 
-impl<'a> DocBufEncodeField<String> for VTableField<'a> {
+impl DocBufEncodeField<String> for VTableField {
     fn encode(&self, data: &String, buffer: &mut Vec<u8>) -> Result<VTableFieldOffset, Error> {
         // Ensure the field data corresponds to the field rules
         #[cfg(feature = "validate")]
@@ -26,18 +26,32 @@ impl<'a> DocBufEncodeField<String> for VTableField<'a> {
                 // Return the offset of the field data, disregarding the data length
                 Ok(self.as_offset(offset_start..offset_end))
             }
-            _ => Err(Error::DocBufEncodeFieldType(self.r#type.to_string())),
+            _ => {
+                println!("Error encoding field type: String");
+                Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
+            }
         }
     }
 }
 
-impl<'a> DocBufEncodeField<&str> for VTableField<'a> {
+impl DocBufEncodeField<&str> for VTableField {
     fn encode(&self, data: &&str, buffer: &mut Vec<u8>) -> Result<VTableFieldOffset, Error> {
         // Ensure the field data corresponds to the field rules
         #[cfg(feature = "validate")]
         self.rules.validate(data)?;
 
         match &self.r#type {
+            VTableFieldType::Uuid => {
+                let offset_start = buffer.len();
+
+                // Encode the field data
+                buffer.extend_from_slice(data.as_bytes());
+
+                let offset_end = buffer.len();
+
+                // Return the offset of the field data, disregarding the data length
+                Ok(self.as_offset(offset_start..offset_end))
+            }
             VTableFieldType::String | VTableFieldType::HashMap { .. } => {
                 // prepend length to the field data
                 let data_length = (data.len() as u32).to_le_bytes();
@@ -55,12 +69,15 @@ impl<'a> DocBufEncodeField<&str> for VTableField<'a> {
                 // Return the offset of the field data, disregarding the data length
                 Ok(self.as_offset(offset_start..offset_end))
             }
-            _ => Err(Error::DocBufEncodeFieldType(self.r#type.to_string())),
+            _ => {
+                println!("Error encoding field type: &str");
+                Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
+            }
         }
     }
 }
 
-impl<'a> DocBufEncodeField<&[u8]> for VTableField<'a> {
+impl DocBufEncodeField<&[u8]> for VTableField {
     fn encode(&self, data: &&[u8], buffer: &mut Vec<u8>) -> Result<VTableFieldOffset, Error> {
         // Ensure the field data corresponds to the field rules
         #[cfg(feature = "validate")]
@@ -84,12 +101,15 @@ impl<'a> DocBufEncodeField<&[u8]> for VTableField<'a> {
                 // Return the offset of the field data, disregarding the data length
                 Ok(self.as_offset(offset_start..offset_end))
             }
-            _ => Err(Error::DocBufEncodeFieldType(self.r#type.to_string())),
+            _ => {
+                println!("Error encoding field type: &[u8]");
+                Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
+            }
         }
     }
 }
 
-impl<'a> DocBufEncodeField<bool> for VTableField<'a> {
+impl DocBufEncodeField<bool> for VTableField {
     fn encode(&self, data: &bool, buffer: &mut Vec<u8>) -> Result<VTableFieldOffset, Error> {
         // Ensure the field data corresponds to the field rules
         #[cfg(feature = "validate")]
@@ -107,12 +127,15 @@ impl<'a> DocBufEncodeField<bool> for VTableField<'a> {
                 // Return the offset of the field data
                 Ok(self.as_offset(offset_start..offset_end))
             }
-            _ => Err(Error::DocBufEncodeFieldType(self.r#type.to_string())),
+            _ => {
+                println!("Error encoding field type: bool");
+                Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
+            }
         }
     }
 }
 
-impl<'a> DocBufEncodeField<NumericValue> for VTableField<'a> {
+impl DocBufEncodeField<NumericValue> for VTableField {
     fn encode(
         &self,
         data: &NumericValue,

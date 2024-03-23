@@ -2,8 +2,10 @@ use super::*;
 
 use crate::validate::regex::Regex;
 
+use serde_derive::{Deserialize, Serialize};
+
 /// Optional rules for a field
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VTableFieldRules {
     pub ignore: bool,
     pub max_value: Option<NumericValue>,
@@ -13,7 +15,8 @@ pub struct VTableFieldRules {
     // An absolute length
     pub length: Option<usize>,
     #[cfg(feature = "regex")]
-    pub regex: Option<Regex>,
+    /// A regex pattern to match
+    pub regex: Option<String>,
     pub sign: bool,
 }
 
@@ -73,7 +76,7 @@ impl VTableFieldRules {
     #[cfg(feature = "regex")]
     #[inline]
     pub fn set_regex(mut self, value: &str) -> Self {
-        self.regex = Regex::from_str(value).ok();
+        self.regex = Some(value.to_string());
         self
     }
 
@@ -97,8 +100,11 @@ impl VTableFieldRules {
 
     #[cfg(feature = "regex")]
     #[inline]
-    pub fn regex(&self) -> Option<&::regex::Regex> {
-        self.regex.as_ref()
+    pub fn regex(&self) -> Option<::regex::Regex> {
+        match &self.regex {
+            None => None,
+            Some(pattern) => Regex::from_str(&pattern).ok(),
+        }
     }
 
     // Return if the field should be ignored
@@ -121,9 +127,9 @@ impl VTableFieldRules {
     #[cfg(feature = "regex")]
     #[inline]
     pub fn check_regex(&self, data: &str) -> Result<(), Error> {
-        if let Some(regex_rules) = self.regex() {
-            if !regex_rules.is_match(data) {
-                let msg = format!("data does not match regex: {regex_rules}");
+        if let Some(regex_pattern) = self.regex() {
+            if !regex_pattern.is_match(data) {
+                let msg = format!("data does not match regex: {regex_pattern}");
                 return Err(Error::FieldRulesRegex(msg));
             }
         }

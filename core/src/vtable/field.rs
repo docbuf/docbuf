@@ -8,11 +8,6 @@ mod rules;
 #[cfg(feature = "validate")]
 mod validate;
 
-use std::ops::Range;
-use std::{cmp::Ordering, str::FromStr};
-
-use crate::traits::{DocBufDecodeField, DocBufEncodeField, DocBufValidateField};
-
 use super::*;
 
 // Re-export Field Implementations
@@ -23,6 +18,13 @@ pub use offset::*;
 pub use rules::*;
 #[cfg(feature = "validate")]
 pub use validate::*;
+
+use crate::traits::{DocBufDecodeField, DocBufEncodeField, DocBufValidateField};
+
+use std::ops::Range;
+use std::{cmp::Ordering, str::FromStr};
+
+use serde_derive::{Deserialize, Serialize};
 
 // Number of bytes in a gigabyte as a usize
 pub const GIGABYTE: usize = 1024 * 1024 * 1024;
@@ -37,25 +39,25 @@ pub const MAX_MAP_ENTRIES: usize = 256 * 256 * 256;
 pub const DEFAULT_FIELD_LENGTH_LE_BYTES: usize = 4;
 
 pub type VTableFieldIndex = u8;
-pub type VTableFieldName<'a> = &'a str;
+pub type VTableFieldName = String; //  = &'a str;
 
-#[derive(Debug, Clone)]
-pub struct VTableField<'a> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VTableField {
     /// The index of the vtable item this field belongs to
     pub item_index: VTableItemIndex,
     /// The type of the field
-    pub r#type: VTableFieldType<'a>,
+    pub r#type: VTableFieldType,
     pub index: VTableFieldIndex,
-    pub name: VTableFieldName<'a>,
+    pub name: VTableFieldName,
     pub rules: VTableFieldRules,
 }
 
-impl<'a> VTableField<'a> {
+impl VTableField {
     pub fn new(
         item_index: VTableItemIndex,
-        r#type: VTableFieldType<'a>,
+        r#type: VTableFieldType,
         index: VTableFieldIndex,
-        name: VTableFieldName<'a>,
+        name: VTableFieldName,
         rules: VTableFieldRules,
     ) -> Self {
         Self {
@@ -96,34 +98,34 @@ impl<'a> VTableField<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct VTableFields<'a>(pub Vec<VTableField<'a>>);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VTableFields(pub Vec<VTableField>);
 
-impl<'a> VTableFields<'a> {
+impl VTableFields {
     pub fn new() -> Self {
         Self(Vec::with_capacity(256))
     }
 
     // Add a field to the vtable fields
     #[inline]
-    pub fn add_field(&mut self, field: VTableField<'a>) {
+    pub fn add_field(&mut self, field: VTableField) {
         self.0.push(field);
     }
 
     #[inline]
-    pub fn iter(&self) -> std::slice::Iter<'_, VTableField<'a>> {
+    pub fn iter(&self) -> std::slice::Iter<'_, VTableField> {
         self.0.iter()
     }
 
     // Inner values
     #[inline]
-    pub fn inner(&self) -> &Vec<VTableField<'a>> {
+    pub fn inner(&self) -> &Vec<VTableField> {
         &self.0
     }
 
     // Inner values mutable
     #[inline]
-    pub fn inner_mut(&mut self) -> &mut Vec<VTableField<'a>> {
+    pub fn inner_mut(&mut self) -> &mut Vec<VTableField> {
         &mut self.0
     }
 
@@ -135,13 +137,13 @@ impl<'a> VTableFields<'a> {
 
     /// Find a field by its name
     #[inline]
-    pub fn find_field_by_name(&self, name: &str) -> Option<&VTableField<'a>> {
+    pub fn find_field_by_name(&self, name: &str) -> Option<&VTableField> {
         self.0.iter().find(|field| field.name == name)
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum VTableFieldType<'a> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VTableFieldType {
     U8,
     U16,
     U32,
@@ -161,14 +163,15 @@ pub enum VTableFieldType<'a> {
     Vec,
     Bytes,
     Bool,
-    Struct(StructName<'a>),
+    Struct(StructName),
     HashMap {
-        key: Box<VTableFieldType<'a>>,
-        value: Box<VTableFieldType<'a>>,
+        key: Box<VTableFieldType>,
+        value: Box<VTableFieldType>,
     },
+    Uuid,
 }
 
-impl<'a> std::fmt::Display for VTableFieldType<'a> {
+impl std::fmt::Display for VTableFieldType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             VTableFieldType::U8 => write!(f, "u8"),
@@ -194,11 +197,12 @@ impl<'a> std::fmt::Display for VTableFieldType<'a> {
             VTableFieldType::HashMap { key, value } => {
                 write!(f, "HashMap<{}, {}>", key, value)
             }
+            VTableFieldType::Uuid => write!(f, "Uuid"),
         }
     }
 }
 
-impl<'a> VTableFieldType<'a> {
+impl VTableFieldType {
     pub fn is_struct(r#type: impl TryInto<Self>) -> bool {
         match r#type.try_into() {
             Ok(VTableFieldType::Struct(_)) => true,
@@ -229,8 +233,8 @@ impl<'a> VTableFieldType<'a> {
     }
 }
 
-impl<'a> From<&'a str> for VTableFieldType<'a> {
-    fn from(s: &'a str) -> Self {
+impl From<&str> for VTableFieldType {
+    fn from(s: &str) -> Self {
         match s {
             "u8" => VTableFieldType::U8,
             "u16" => VTableFieldType::U16,
@@ -252,14 +256,15 @@ impl<'a> From<&'a str> for VTableFieldType<'a> {
             s if s.contains("[u8]") => VTableFieldType::Bytes,
             s if s.contains("[u8 ; ") => VTableFieldType::Bytes,
             s if s.contains("Vec") => VTableFieldType::Vec,
+            s if s.contains("Uuid") => VTableFieldType::Uuid,
             "bool" => VTableFieldType::Bool,
             s if s.contains("HashMap") => VTableFieldType::parse_hashmap_types(s),
-            s => VTableFieldType::Struct(s),
+            s => VTableFieldType::Struct(s.to_owned()),
         }
     }
 }
 
-impl<'a> From<u8> for VTableFieldType<'a> {
+impl From<u8> for VTableFieldType {
     fn from(byte: u8) -> Self {
         match byte {
             0 => VTableFieldType::U8,
@@ -281,13 +286,18 @@ impl<'a> From<u8> for VTableFieldType<'a> {
             16 => VTableFieldType::Vec,
             17 => VTableFieldType::Bytes,
             18 => VTableFieldType::Bool,
-            19 => VTableFieldType::Struct(""),
+            19 => VTableFieldType::Struct(String::new()),
+            20 => VTableFieldType::HashMap {
+                key: Box::new(VTableFieldType::U8),
+                value: Box::new(VTableFieldType::U8),
+            },
+            21 => VTableFieldType::Uuid,
             _ => todo!("Handle unknown field type"),
         }
     }
 }
 
-impl<'a> Into<u8> for VTableFieldType<'a> {
+impl Into<u8> for VTableFieldType {
     fn into(self) -> u8 {
         match self {
             VTableFieldType::U8 => 0,
@@ -311,6 +321,7 @@ impl<'a> Into<u8> for VTableFieldType<'a> {
             VTableFieldType::Bool => 18,
             VTableFieldType::Struct(_) => 19,
             VTableFieldType::HashMap { .. } => 20, //
+            VTableFieldType::Uuid => 21,
         }
     }
 }

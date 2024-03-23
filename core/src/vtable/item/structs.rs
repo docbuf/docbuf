@@ -1,20 +1,22 @@
 use super::*;
 
-pub type StructName<'a> = &'a str;
+use serde_derive::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
-pub struct VTableStruct<'a> {
+pub type StructName = String; //  = &'a str;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VTableStruct {
     pub item_index: VTableItemIndex,
-    pub name: StructName<'a>,
-    pub fields: VTableFields<'a>,
+    pub name: StructName,
+    pub fields: VTableFields,
     pub num_fields: VTableFieldIndex,
 }
 
-impl<'a> VTableStruct<'a> {
-    pub fn new(name: &'a str, index: Option<u8>) -> Self {
+impl VTableStruct {
+    pub fn new(name: &str, index: Option<u8>) -> Self {
         Self {
             item_index: index.unwrap_or_default(),
-            name,
+            name: name.to_owned(),
             fields: VTableFields::new(),
             num_fields: 0,
         }
@@ -23,8 +25,8 @@ impl<'a> VTableStruct<'a> {
     #[inline]
     pub fn add_field(
         &mut self,
-        field_type: impl Into<VTableFieldType<'a>>,
-        field_name: &'a str,
+        field_type: impl Into<VTableFieldType>,
+        field_name: &str,
         field_rules: VTableFieldRules,
     ) {
         let field_index = self.num_fields;
@@ -33,7 +35,7 @@ impl<'a> VTableStruct<'a> {
             self.item_index,
             field_type.into(),
             field_index,
-            field_name,
+            field_name.to_owned(),
             field_rules,
         );
         self.fields.add_field(field);
