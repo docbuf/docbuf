@@ -28,7 +28,7 @@ mod tests {
 
         let mut h = HighlightLines::new(syntax, &ts.themes["Solarized (light)"]);
 
-        let docbuf = std::fs::read_to_string("../examples/example.docbuf").unwrap();
+        let docbuf = std::fs::read_to_string("../idl/examples/example.docbuf").unwrap();
 
         // println!("{}", docbuf);
 
