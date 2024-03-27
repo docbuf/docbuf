@@ -17,7 +17,10 @@ impl DocBufDecodeField<String> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: String");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -33,7 +36,10 @@ impl DocBufDecodeField<bool> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: bool");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -49,7 +55,10 @@ impl DocBufDecodeField<u8> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: u8");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -65,7 +74,10 @@ impl DocBufDecodeField<u16> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: u16");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -81,7 +93,10 @@ impl DocBufDecodeField<u32> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: u32");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -100,7 +115,10 @@ impl DocBufDecodeField<u64> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: u64");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -124,7 +142,10 @@ impl DocBufDecodeField<u128> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: u128");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -143,7 +164,10 @@ impl DocBufDecodeField<usize> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: usize");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -159,7 +183,10 @@ impl DocBufDecodeField<i8> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: i8");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -175,7 +202,10 @@ impl DocBufDecodeField<i16> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: i16");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -191,7 +221,10 @@ impl DocBufDecodeField<i32> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: i32");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -210,7 +243,10 @@ impl DocBufDecodeField<i64> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: i64");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -230,7 +266,10 @@ impl DocBufDecodeField<i128> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: i128");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -249,7 +288,10 @@ impl DocBufDecodeField<isize> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: isize");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -265,7 +307,10 @@ impl DocBufDecodeField<f32> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: f32");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -284,7 +329,10 @@ impl DocBufDecodeField<f64> for VTableField {
 
                 Ok(data)
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: f64");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }
@@ -301,7 +349,10 @@ impl DocBufDecodeField<Vec<u8>> for VTableField {
 
                 Ok(buffer.drain(0..length).collect())
             }
-            _ => Err(Error::DocBufDecodeFieldType(self.r#type.to_string())),
+            _ => {
+                dbg!("Failed to Decode Type: Vec<u8>");
+                Err(Error::DocBufDecodeFieldType(self.to_owned()))
+            }
         }
     }
 }

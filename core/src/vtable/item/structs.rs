@@ -30,15 +30,24 @@ impl VTableStruct {
         field_rules: VTableFieldRules,
     ) {
         let field_index = self.num_fields;
+        let field_type: VTableFieldType = field_type.into();
 
         let field = VTableField::new(
             self.item_index,
-            field_type.into(),
+            field_type.clone(),
             field_index,
             field_name.to_owned(),
             field_rules,
         );
         self.fields.add_field(field);
+
+        // If the field type is not a struct, increment the number of fields
+        // if let VTableFieldType::Struct(_) = field_type {
+        //     // Return early, do not increment the number of fields,
+        //     // as the number of fields will be incremented when the struct is added
+        //     return;
+        // }
+
         self.num_fields += 1;
     }
 

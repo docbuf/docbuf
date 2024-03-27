@@ -42,6 +42,18 @@ impl From<&[u8]> for VTableId {
     }
 }
 
+impl From<u64> for VTableId {
+    fn from(src: u64) -> Self {
+        Self(src.to_le_bytes())
+    }
+}
+
+impl From<VTableId> for u64 {
+    fn from(src: VTableId) -> u64 {
+        u64::from_le_bytes(src.0)
+    }
+}
+
 impl std::fmt::Display for VTableId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_hex())
@@ -272,5 +284,12 @@ impl VTable {
     #[inline]
     pub fn alloc_buf(&self) -> Vec<u8> {
         Vec::with_capacity(self.avg_size())
+    }
+
+    #[inline]
+    pub fn num_offsets(&self) -> u16 {
+        // Add 1 to account for the root item offset
+        // Substract the number of items to account for the flat array of offsets
+        self.num_fields + 1 - self.num_items as u16
     }
 }

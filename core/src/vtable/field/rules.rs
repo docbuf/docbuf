@@ -14,7 +14,7 @@ pub struct VTableFieldRules {
     pub min_length: Option<usize>,
     // An absolute length
     pub length: Option<usize>,
-    #[cfg(feature = "regex")]
+    // #[cfg(feature = "regex")]
     /// A regex pattern to match
     pub regex: Option<String>,
     pub sign: bool,

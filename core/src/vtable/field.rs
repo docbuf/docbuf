@@ -98,6 +98,16 @@ impl VTableField {
     }
 }
 
+impl std::fmt::Display for VTableField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} {} {} {:?}",
+            self.r#type, self.index, self.name, self.rules
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VTableFields(pub Vec<VTableField>);
 
@@ -251,6 +261,7 @@ impl From<&str> for VTableFieldType {
             "f32" => VTableFieldType::F32,
             "f64" => VTableFieldType::F64,
             "String" => VTableFieldType::String,
+            "[u8; 32]" => VTableFieldType::Bytes,
             s if s.contains("str") => VTableFieldType::Str,
             "Vec < u8 >" => VTableFieldType::Bytes,
             s if s.contains("[u8]") => VTableFieldType::Bytes,

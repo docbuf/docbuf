@@ -51,7 +51,7 @@ pub enum Error {
     #[error("Failed to encode docbuf map field type: {0}")]
     DocBufEncodeFieldType(String),
     #[error("Failed to decode docbuf map field type: {0}")]
-    DocBufDecodeFieldType(String),
+    DocBufDecodeFieldType(VTableField),
     #[error(transparent)]
     Hex(#[from] hex::FromHexError),
     #[error(transparent)]

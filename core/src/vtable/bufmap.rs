@@ -21,15 +21,19 @@ impl DocBufMap<String> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         new_value: &String,
+        offset: VTableFieldOffset,
         buffer: &mut Vec<u8>,
-        offset: &VTableFieldOffset,
         offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
 
         match field.r#type {
             VTableFieldType::String => {
                 let data = new_value.as_bytes();
+
+                // Update the length of the data in the buffer
+                let data_length = (data.len() as u32).to_le_bytes();
+                buffer.splice(offset.1.start - 4..offset.1.start, data_length.into_iter());
 
                 buffer.splice(offset.range(), data.iter().cloned());
 
@@ -38,7 +42,10 @@ impl DocBufMap<String> for &'static VTable {
                     VTableFieldOffsetDiff::new(offset.len(), data.len()),
                 );
 
-                Ok(())
+                Ok(VTableFieldOffset(
+                    offset.0,
+                    offset.1.start..(offset.1.start + data.len()),
+                ))
             }
             _ => Err(Error::DocBufMapInvalidFieldType(field.r#type.to_string())),
         }
@@ -63,16 +70,20 @@ impl DocBufMap<Vec<u8>> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         new_value: &Vec<u8>,
+        offset: VTableFieldOffset,
         buffer: &mut Vec<u8>,
-        offset: &VTableFieldOffset,
         offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         let field = self.get_field_by_offset_index(offset.0)?;
 
         field.rules.validate(new_value)?;
 
         match field.r#type {
             VTableFieldType::Bytes => {
+                // Update the length of the data in the buffer
+                let data_length = (new_value.len() as u32).to_le_bytes();
+                buffer.splice(offset.1.start - 4..offset.1.start, data_length.into_iter());
+
                 buffer.splice(offset.range(), new_value.iter().cloned());
 
                 offsets.resize(
@@ -80,7 +91,10 @@ impl DocBufMap<Vec<u8>> for &'static VTable {
                     VTableFieldOffsetDiff::new(offset.len(), new_value.len()),
                 );
 
-                Ok(())
+                Ok(VTableFieldOffset(
+                    offset.0,
+                    offset.1.start..(offset.1.start + new_value.len()),
+                ))
             }
             _ => Err(Error::DocBufMapInvalidFieldType(field.r#type.to_string())),
         }
@@ -106,10 +120,10 @@ impl DocBufMap<u8> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &u8,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -135,10 +149,10 @@ impl DocBufMap<u16> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &u16,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -164,10 +178,10 @@ impl DocBufMap<u32> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &u32,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -195,10 +209,10 @@ impl DocBufMap<u64> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &u64,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -226,10 +240,10 @@ impl DocBufMap<usize> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &usize,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -253,10 +267,10 @@ impl DocBufMap<i8> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &i8,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -282,10 +296,10 @@ impl DocBufMap<i16> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &i16,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -311,10 +325,10 @@ impl DocBufMap<i32> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &i32,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -342,10 +356,10 @@ impl DocBufMap<i64> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &i64,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -373,10 +387,10 @@ impl DocBufMap<isize> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &isize,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -402,10 +416,10 @@ impl DocBufMap<f32> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &f32,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -433,10 +447,10 @@ impl DocBufMap<f64> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &f64,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
@@ -460,10 +474,10 @@ impl DocBufMap<bool> for &'static VTable {
     fn docbuf_map_replace(
         &self,
         _new_value: &bool,
+        _offset: VTableFieldOffset,
         _buffer: &mut Vec<u8>,
-        _offset: &VTableFieldOffset,
         _offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), Error> {
+    ) -> Result<VTableFieldOffset, Error> {
         unimplemented!("docbuf_map_replace")
     }
 }
