@@ -5,8 +5,9 @@ edition = "2021"
 
 [features]
 default = ["full"]
-full = ["db"]
+full = ["db", "regex"]
 db = []
+regex = ["docbuf-core/regex"]
 
 [dependencies]
 docbuf-core = { path = "../core", features = ["full"] }

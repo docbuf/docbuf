@@ -6,7 +6,9 @@ use docbuf_core::vtable::*;
 
 use proc_macro2::{token_stream, Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
-use syn::{DeriveInput, ItemStruct};
+use syn::{DeriveInput, ItemStruct, Meta};
+
+pub const DEFAULT_NAMESPACE: &str = "default";
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {}
@@ -45,10 +47,12 @@ pub type DbConfigPath = String;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum DocBufOpt {
+    Namespace(String),
     Sign(bool),
     Crypto(DocBufCryptoAlgorithm),
     Hash(HashAlgorithm),
     Html(HtmlTemplatePath),
+    UseUuid(bool),
     DbConfig(DbConfigPath),
 }
 
@@ -56,6 +60,27 @@ pub enum DocBufOpt {
 pub struct DocBufOpts(HashSet<DocBufOpt>);
 
 impl DocBufOpts {
+    pub fn namespace(&self) -> &str {
+        self.0
+            .iter()
+            .find_map(|opt| match opt {
+                DocBufOpt::Namespace(namespace) => Some(namespace.as_str()),
+                _ => None,
+            })
+            .unwrap_or(DEFAULT_NAMESPACE)
+    }
+
+    /// Returns true if the `uuid` option is set to true,
+    /// or if the `db_config` option is set.
+    /// Otherwise, returns false.
+    pub fn uuid(&self) -> bool {
+        self.0.iter().any(|opt| match opt {
+            DocBufOpt::DbConfig(_) => true,
+            DocBufOpt::UseUuid(v) => *v,
+            _ => false,
+        })
+    }
+
     pub fn db_path(&self) -> Option<&str> {
         self.0.iter().find_map(|opt| match opt {
             DocBufOpt::DbConfig(path) => Some(path.as_str()),
@@ -83,10 +108,12 @@ where
 {
     fn from((key, value): (K, V)) -> Self {
         match (key.as_ref(), value.as_ref()) {
+            ("namespace", namespace) => DocBufOpt::Namespace(namespace.to_string()),
             ("sign", v) => DocBufOpt::Sign(v == "true"),
             ("crypto", algo) => DocBufOpt::Crypto(DocBufCryptoAlgorithm::from(algo)),
             ("hash", algo) => DocBufOpt::Hash(HashAlgorithm::from(algo)),
             ("html", template) => DocBufOpt::Html(template.to_string()),
+            ("uuid", v) => DocBufOpt::UseUuid(v == "true"),
             ("db_config", path) => {
                 // unimplemented!("Db Config Path: {:?}", path);
                 DocBufOpt::DbConfig(path.to_string())
@@ -140,10 +167,18 @@ pub fn docbuf_attr(_attr: TokenStream, _item: TokenStream) -> TokenStream {
     TokenStream::new()
 }
 
-pub fn docbuf_item(name: &TokenStream, lifetimes: &TokenStream, item: &TokenStream) -> TokenStream {
-    let fields = parse_item_fields(item);
+pub fn docbuf_item(
+    name: &TokenStream,
+    lifetimes: &TokenStream,
+    options: &DocBufOpts,
+    item: &TokenStream,
+) -> TokenStream {
+    let fields = parse_item_fields(item, options);
+
+    let derivatives = parse_item_derivatives(item);
 
     let output = quote! {
+        #derivatives
         pub struct #name #lifetimes {
             #fields
         }
@@ -152,9 +187,15 @@ pub fn docbuf_item(name: &TokenStream, lifetimes: &TokenStream, item: &TokenStre
     TokenStream::from(output)
 }
 
-pub fn docbuf_impl(name: &TokenStream, lifetimes: &TokenStream, item: &TokenStream) -> TokenStream {
+pub fn docbuf_impl(
+    name: &TokenStream,
+    lifetimes: &TokenStream,
+    options: &DocBufOpts,
+    item: &TokenStream,
+) -> TokenStream {
     let serialization_methods = docbuf_impl_serialization();
-    let vtable = docbuf_impl_vtable(&name, &item);
+    let uuid_methods = docbuf_impl_uuid(options);
+    let vtable = docbuf_impl_vtable(name, options, item);
 
     let output = quote! {
         impl #lifetimes ::docbuf_core::traits::DocBuf for #name #lifetimes {
@@ -162,6 +203,9 @@ pub fn docbuf_impl(name: &TokenStream, lifetimes: &TokenStream, item: &TokenStre
 
             // Serialization Methods
             #serialization_methods
+
+            // UUID Methods
+            #uuid_methods
 
             // VTable
             #vtable
@@ -192,10 +236,11 @@ pub fn docbuf_impl_crypto(
     }
 }
 
-pub fn docbuf_db_impl(
+pub fn docbuf_impl_db(
     name: &TokenStream,
     lifetimes: &TokenStream,
     options: &DocBufOpts,
+    item: &TokenStream,
 ) -> TokenStream {
     #[cfg(not(feature = "db"))]
     return TokenStream::new();
@@ -203,12 +248,12 @@ pub fn docbuf_db_impl(
     // Check if the db_config option is present
     let db_mngr = options.db_mngr();
 
+    // Implement partition key, if it is present.
+    let partition_key = docbuf_impl_partition(options, item);
+
     quote! {
         impl #lifetimes ::docbuf_db::DocBufDb for #name #lifetimes {
             type Db = ::docbuf_db::DocBufDbManager;
-
-            /// The unique document id type.
-            type DbDocId = [u8; 16];
 
             /// The predicate type used for querying the database.
             type Predicate = ();
@@ -218,20 +263,14 @@ pub fn docbuf_db_impl(
                 Ok(#db_mngr)
             }
 
-            fn db_doc_id(&self) -> Result<Option<Self::DbDocId>, ::docbuf_db::Error> {
-                use ::docbuf_db::DocBufDbMngr;
-                let db = Self::db()?;
-
-                db.db_doc_id(self)
-            }
-
             /// Write a document into the database.
             /// This will return the document id.
-            fn db_insert(&self) -> Result<Self::DbDocId, ::docbuf_db::Error> {
+            fn db_insert(&self) -> Result<::docbuf_core::uuid::Uuid, ::docbuf_db::Error> {
                 use ::docbuf_db::DocBufDbMngr;
                 let db = Self::db()?;
+                let partition_key = self.partition_key()?;
 
-                db.db_insert(self)
+                db.insert(self, partition_key)
             }
 
             /// Return all documents in the database.
@@ -245,7 +284,12 @@ pub fn docbuf_db_impl(
             }
 
             /// Get a document from the database.
-            fn db_get(id: Self::DbDocId) -> Result<Self::Doc, ::docbuf_db::Error> {
+            fn db_get(id: ::docbuf_core::uuid::Uuid, partition_key: Option<impl Into<::docbuf_db::PartitionKey>>) -> Result<Self::Doc, ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
+            /// Get a document partition from the database.
+            fn db_get_partition(partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
@@ -259,6 +303,11 @@ pub fn docbuf_db_impl(
                 unimplemented!("DocBufDb method not implemented")
             }
 
+            /// Delete a document partition from the database.
+            fn db_delete_partition(partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<(), ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
             /// Return the number of documents in the database.
             fn db_count() -> Result<usize, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
@@ -266,17 +315,62 @@ pub fn docbuf_db_impl(
 
             /// Return the number of documents in the database given a predicate.
             fn db_count_where(
-                vtable_id: &::docbuf_core::vtable::VTableId,
                 predicate: Self::Predicate,
             ) -> Result<usize, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
+            /// Return the number of documents in the database given a partition key.
+            fn db_count_partition(partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<usize, ::docbuf_db::Error> {
+                unimplemented!("DocBufDb method not implemented")
+            }
+
+            #partition_key
+
         }
     }
 }
 
-pub fn docbuf_impl_vtable(name: &TokenStream, item: &TokenStream) -> TokenStream {
+pub fn docbuf_impl_partition(options: &DocBufOpts, item: &TokenStream) -> TokenStream {
+    let ast: ItemStruct = syn::parse(item.to_owned().into()).expect("Failed to parse item");
+
+    ast.fields
+        .into_iter()
+        .find_map(|field| {
+            field.attrs.iter().find_map(|attr| {
+                let attributes = parse_docbuf_field_attrs(attr.to_token_stream())
+                    .expect("Failed to parse field attributes");
+
+                attributes
+                    .iter()
+                    .find_map(|(_, (key, value))| match key.to_string().as_str() {
+                        "partition_key" => {
+                            if value.to_string().as_str() != "true" {
+                                return None;
+                            }
+
+                            let field_name = field.ident.as_ref().expect("Field name not found for partition key");
+                            Some(quote! {
+                                /// Return the partition key for the document.
+                                fn partition_key(&self) -> Result<::docbuf_db::PartitionKey, ::docbuf_db::Error> {
+                                    Ok(::docbuf_db::PartitionKey::from(self.#field_name.clone()))
+                                }
+                            })
+                        }
+                        _ => None,
+                    })
+            })
+        })
+        .unwrap_or(quote! {})
+}
+
+pub fn docbuf_impl_vtable(
+    name: &TokenStream,
+    options: &DocBufOpts,
+    item: &TokenStream,
+) -> TokenStream {
+    let namespace = options.namespace();
+
     let ast: ItemStruct = syn::parse(item.to_owned().into()).expect("Failed to parse item");
 
     let fields = ast.fields.into_iter().collect::<Vec<_>>();
@@ -301,7 +395,7 @@ pub fn docbuf_impl_vtable(name: &TokenStream, item: &TokenStream) -> TokenStream
                     for vtable_item in #table_name_var.items.iter() {
                         match vtable_item {
                             ::docbuf_core::vtable::VTableItem::Struct(#struct_name_var) => {
-                                let name = #struct_name_var.name;
+                                let name = #struct_name_var.name.clone();
                                 if name == stringify!(#ty) {
                                     let field_type = ::docbuf_core::vtable::VTableFieldType::Struct(name);
 
@@ -333,14 +427,27 @@ pub fn docbuf_impl_vtable(name: &TokenStream, item: &TokenStream) -> TokenStream
         }
     });
 
+    // Add the `_uuid` field to the vtable if the option is enabled
+    let uuid = match options.uuid() {
+        true => quote! {
+            let field_type = ::docbuf_core::vtable::VTableFieldType::Uuid;
+            let field_rules = ::docbuf_core::vtable::VTableFieldRules::new();
+            vtable_struct.add_field(field_type, "_uuid", field_rules);
+        },
+        false => quote! {},
+    };
+
     let vtable = quote! {
-        fn vtable() -> Result<&'static ::docbuf_core::vtable::VTable<'static>, ::docbuf_core::error::Error> {
+        fn vtable() -> Result<&'static ::docbuf_core::vtable::VTable, ::docbuf_core::error::Error> {
             static VTABLE: ::std::sync::OnceLock<::docbuf_core::vtable::VTable> = ::std::sync::OnceLock::new();
 
             let vtable = VTABLE.get_or_init(||  {
-                let mut vtable = ::docbuf_core::vtable::VTable::new(stringify!(#name));
+                let mut vtable = ::docbuf_core::vtable::VTable::new(String::from(#namespace), String::from(stringify!(#name)));
 
                 let mut vtable_struct = ::docbuf_core::vtable::VTableStruct::new(stringify!(#name), None);
+
+                // Add the _uuid field to the vtable
+                #uuid
 
                 // Add the fields to the vtable
                 #(#fields)*
@@ -364,6 +471,21 @@ pub fn docbuf_impl_vtable(name: &TokenStream, item: &TokenStream) -> TokenStream
     };
 
     vtable
+}
+
+// Impl docbuf return uuid
+pub fn docbuf_impl_uuid(options: &DocBufOpts) -> TokenStream {
+    if options.uuid() {
+        let output = quote! {
+            fn uuid(&self) -> Result<::docbuf_core::uuid::Uuid, ::docbuf_core::error::Error> {
+                Ok(self._uuid)
+            }
+        };
+
+        TokenStream::from(output)
+    } else {
+        TokenStream::new()
+    }
 }
 
 // Impl docbuf serialization and deserialization for the input struct
@@ -391,10 +513,10 @@ pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let options = DocBufOpts::from(&attr);
 
-    let item_docbuf = docbuf_item(&name, &lifetimes, &item);
-    let docbuf_methods = docbuf_impl(&name, &lifetimes, &item);
+    let item_docbuf = docbuf_item(&name, &lifetimes, &options, &item);
+    let docbuf_methods = docbuf_impl(&name, &lifetimes, &options, &item);
     let crypto_methods = docbuf_impl_crypto(&name, &lifetimes, &options);
-    let db_methods = docbuf_db_impl(&name, &lifetimes, &options);
+    let db_methods = docbuf_impl_db(&name, &lifetimes, &options, &item);
 
     let output = quote! {
         #item_docbuf
@@ -412,20 +534,70 @@ pub fn parse_item_name(input: &TokenStream) -> TokenStream {
     ast.ident.to_token_stream()
 }
 
-// Parse the item fields from the input stream
-pub fn parse_item_fields(input: &TokenStream) -> TokenStream {
-    let ast: ItemStruct = syn::parse(input.to_owned().into()).expect("Failed to parse input");
-    let fields = ast.fields.iter().map(|field| {
-        let name = field.ident.as_ref().unwrap();
-        let ty = field.ty.to_token_stream();
-        let vis = &field.vis;
-
-        quote! {
-            #vis #name: #ty
+// Retain the item derive macros from the input token stream,
+// stripping the docbuf derive macro.
+pub fn parse_item_derivatives(input: &TokenStream) -> TokenStream {
+    let ast: DeriveInput = syn::parse(input.to_owned().into()).expect("Failed to parse input");
+    let derivatives = ast.attrs.iter().filter_map(|attr| {
+        if !attr.path().is_ident("docbuf") {
+            Some(attr.to_token_stream())
+        } else {
+            None
         }
     });
 
     quote! {
+        #(#derivatives)*
+    }
+}
+
+// Parse the item fields from the input stream
+pub fn parse_item_fields(input: &TokenStream, options: &DocBufOpts) -> TokenStream {
+    let ast: ItemStruct = syn::parse(input.to_owned().into()).expect("Failed to parse input");
+    let fields = ast.fields.iter().map(|field| {
+        let name = field
+            .ident
+            .as_ref()
+            .map(|f| f.to_owned())
+            .unwrap_or(Ident::new("__inner__", Span::call_site()));
+        let ty = field.ty.to_token_stream();
+        let vis = &field.vis;
+
+        // parse the field attributes, e.g. `#[serde()]`
+        let attr = field
+            .attrs
+            .iter()
+            .filter_map(|attr| {
+                // Check if attr is `docbuf` attribute
+                if !attr.path().is_ident("docbuf") {
+                    Some(attr.to_token_stream())
+                } else {
+                    Some(quote! {})
+                }
+            })
+            .collect::<Vec<TokenStream>>();
+
+        // TODO: Parse comments from the field attributes
+
+        quote! {
+            #(#attr)*
+            #vis #name: #ty
+        }
+    });
+
+    // Check for added fields
+    let id_field = match options.uuid() {
+        true => quote! {
+            /// DocBuf Universal Doc ID
+            #[serde(with = "::docbuf_core::uuid::serde::compact")]
+            pub _uuid: ::docbuf_core::uuid::Uuid,
+        },
+        false => quote! {},
+    };
+
+    quote! {
+        #id_field
+
         #(#fields),*
     }
 }
@@ -466,34 +638,25 @@ pub fn parse_field_rules(input: &syn::Field) -> Result<TokenStream, Error> {
 
             let rules = attributes
                 .iter()
-                .map(|(_, (key, value))| match key.to_string().as_str() {
-                    "sign" | "ignore" => {
-                        quote! {
-                            field_rules.#key = #value;
-                        }
-                    }
-                    "min_value" | "max_value" => {
-                        quote! {
-                            field_rules.#key = Some((#value as #field_type).into());
-                        }
-                    }
-                    "min_length" | "max_length" | "length" => {
-                        quote! {
-                            field_rules.#key = Some(#value);
-                        }
-                    }
+                .filter_map(|(_, (key, value))| match key.to_string().as_str() {
+                    "sign" | "ignore" => Some(quote! {
+                        field_rules.#key = #value;
+                    }),
+                    "min_value" | "max_value" => Some(quote! {
+                        field_rules.#key = Some((#value as #field_type).into());
+                    }),
+                    "min_length" | "max_length" | "length" => Some(quote! {
+                        field_rules.#key = Some(#value);
+                    }),
                     #[cfg(feature = "regex")]
-                    "regex" => {
-                        quote! {
-                            field_rules.#key = Some(
-                                ::docbuf_core::validate::regex::Regex::new(#value)
-                                    .expect(&format!("Invalid regex: {:?}", #value))
-                            );
-                        }
-                    }
-                    _ => {
-                        quote!()
-                    }
+                    "regex" => Some(quote! {
+                        field_rules.#key = Some(
+                            #value.to_string()
+                            // ::docbuf_core::validate::regex::Regex::new(#value)
+                            //     .expect(&format!("Invalid regex: {:?}", #value))
+                        );
+                    }),
+                    _ => None,
                 })
                 .collect::<Vec<TokenStream>>();
 
