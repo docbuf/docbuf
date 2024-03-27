@@ -11,7 +11,7 @@ pub fn benchmark_complex_vtable(c: &mut Criterion) {
 
 pub fn benchmark_new_vtable(c: &mut Criterion) {
     c.bench_function("benchmark_new_vtable", |b| {
-        b.iter(|| black_box(VTable::new("test")))
+        b.iter(|| black_box(VTable::new("default".to_string(), "test".to_string())))
     });
 }
 

@@ -32,8 +32,8 @@ fn run_test_cases<'de, D: TestHarness<'de>>(
 
 #[test]
 fn test_regex_lowercase() -> Result<(), Box<dyn std::error::Error>> {
-    #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
-    #[docbuf {}]
+    #[docbuf]
+    #[derive(Debug, Clone, Serialize, Deserialize, Default)]
     pub struct Document {
         #[docbuf {
             // Check only for lowercase letters with three characters
@@ -83,13 +83,13 @@ fn test_regex_lowercase() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_regex_uuid() -> Result<(), Box<dyn std::error::Error>> {
-    #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
-    #[docbuf {}]
+    #[docbuf]
+    #[derive(Debug, Clone, Serialize, Deserialize, Default)]
     pub struct Document {
         #[docbuf {
-                // Check regex for uuid v4
-                regex = r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$";
-            }]
+            // Check regex for uuid v4
+            regex = r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$";
+        }]
         pub string_value: String,
     }
 
@@ -129,8 +129,8 @@ fn test_regex_uuid() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_min_max_length() -> Result<(), Box<dyn std::error::Error>> {
-    #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
-    #[docbuf {}]
+    #[docbuf]
+    #[derive(Debug, Clone, Serialize, Deserialize, Default)]
     pub struct Document {
         #[docbuf {
             min_length = 4;
@@ -171,8 +171,8 @@ fn test_min_max_length() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_length() -> Result<(), Box<dyn std::error::Error>> {
-    #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
-    #[docbuf {}]
+    #[docbuf]
+    #[derive(Debug, Clone, Serialize, Deserialize, Default)]
     pub struct Document {
         #[docbuf {
             length = 5;

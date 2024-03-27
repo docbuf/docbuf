@@ -1,4 +1,4 @@
-use docbuf_core::traits::DocBuf;
+use docbuf_core::{traits::DocBuf, uuid::Uuid};
 use docbuf_db::traits::*;
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};
@@ -61,8 +61,8 @@ fn run_test_cases<'de, D: TestHarness<'de>>(
     Ok(())
 }
 
-#[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
-#[docbuf {}]
+#[docbuf]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct U8Value {
     #[docbuf {
         // Check only for values between 200 and 255
@@ -109,8 +109,9 @@ fn test_u8() -> Result<(), Box<dyn std::error::Error>> {
     run_test_cases::<U8Value>(test_cases)
 }
 
-#[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
-#[docbuf {}]
+// #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
+#[docbuf]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct U16Value {
     #[docbuf {
         // Check only for values between 200 and 255

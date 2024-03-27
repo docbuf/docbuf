@@ -35,7 +35,7 @@ pub fn benchmark_complex_roundtrip_field_mutation(c: &mut Criterion) {
 
                     let sig = vec![1; 32];
 
-                    vtable.docbuf_map_replace(&sig, &mut buffer, &sig_offset, &mut offsets)
+                    vtable.docbuf_map_replace(&sig, sig_offset, &mut buffer, &mut offsets)
                 })
             })
         },

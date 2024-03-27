@@ -16,14 +16,7 @@ pub mod test_deps {
 }
 
 trait TestHarness<'de>:
-    DocBuf
-    + SetTestValues
-    + Default
-    + Deserialize<'de>
-    + Serialize
-    + std::fmt::Debug
-    + PartialEq
-    + Clone
+    DocBuf + SetTestValues + Default + Deserialize<'de> + Serialize + std::fmt::Debug + PartialEq
 {
     /// Assert the serialization size of the document buffer is less than or equal to the size of the
     /// bincode and JSON serialization.

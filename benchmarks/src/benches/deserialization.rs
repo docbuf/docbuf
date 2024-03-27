@@ -33,12 +33,8 @@ pub fn benchmark_complex_deserialization_docbuf_map(c: &mut Criterion) {
             b.iter(|| {
                 black_box(
                     // Return the signature from the buffer using the offsets and the vtable
-                    <&VTable<'static> as DocBufMap<Vec<u8>>>::docbuf_map(
-                        vtable,
-                        buf,
-                        &off.as_ref()[4],
-                    )
-                    .expect("failed to deserialize docbuf"),
+                    <&VTable as DocBufMap<Vec<u8>>>::docbuf_map(vtable, buf, &off.as_ref()[4])
+                        .expect("failed to deserialize docbuf"),
                 )
             })
         },

@@ -1,15 +1,24 @@
-use docbuf_core::traits::{DocBuf, DocBufMap};
-use docbuf_db::traits::*;
-use docbuf_macros::*;
-use serde::{Deserialize, Serialize};
-
 use crate::{SetTestValues, TestHarness};
+
+use std::collections::HashMap;
+
+use docbuf_core::{
+    traits::{DocBuf, DocBufMap},
+    uuid::Uuid,
+    vtable::{VTable, VTableId, VTABLE_FIELD_OFFSET_SIZE_BYTES},
+};
+use docbuf_db::{traits::*, PartitionKey};
+use docbuf_macros::*;
+
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 pub struct Complex(Vec<Document>);
 
-#[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
+    namespace: "complex";
     // Sign the entire document, will create an allocation for the document
     // signature
     sign = true;
@@ -18,10 +27,21 @@ pub struct Complex(Vec<Document>);
     // Use the sha256 hash algorithm
     // hash = "sha256";
     html = "path/to/html/template.html";
-    // Path to the database configuration file
+    // Path to the database configuration file.
+    // This will automatically add a `_uuid` field to the document
     db_config = "/tmp/.docbuf/db/config.toml";
+    // To add a `_uuid` field to the document separately, set:
+    // uuid = true;
 }]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Document {
+    #[docbuf {
+        // Hash the author string and use it as the partition key,
+        // rather than the uuid. This will put the author in the same
+        // partition.
+        partition_key = true;
+    }]
+    pub author: String,
     pub title: String,
     #[docbuf {
         min_length = 0;
@@ -44,10 +64,10 @@ impl PartialEq for Document {
     }
 }
 
-#[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
     sign = true;
 }]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Metadata {
     #[docbuf {
         min_length = 0;
@@ -98,10 +118,11 @@ impl PartialEq for Metadata {
     }
 }
 
-#[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
+// #[derive(Debug, Clone, DocBuf, Serialize, Deserialize, Default)]
 #[docbuf {
     // sign = "true";
 }]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Signature {
     #[docbuf {
         length = 32;
@@ -119,6 +140,8 @@ impl PartialEq for Signature {
 impl Document {
     pub fn dummy() -> Self {
         Self {
+            _uuid: Uuid::new_v4(),
+            author: ["A"; 16].concat(),
             title: ["T"; 64].concat(),
             body: ["B"; 2048].concat(),
             footer: ["F"; 32].concat(),
@@ -240,24 +263,32 @@ fn test_docbuf_map() -> Result<(), docbuf_core::error::Error> {
 
     println!("Offsets: {:?}\n\n", offsets);
 
-    let mut field_data: String = Document::vtable()?.docbuf_map(&buffer, &offsets.as_ref()[0])?;
+    let target_offset = offsets
+        .as_ref()
+        .get(1)
+        .map(|offset| offset.clone())
+        .unwrap();
+
+    let mut field_data: String = Document::vtable()?.docbuf_map(&buffer, &target_offset)?;
 
     println!("Field: {:?}\n\n", field_data);
 
-    assert_eq!(document.title, field_data);
+    assert_eq!(document.author, field_data);
 
     field_data = String::from("Hello, World!");
-    let offset = offsets.as_ref()[0].clone();
+    let target_offset = Document::vtable()?.docbuf_map_replace(
+        &field_data,
+        // consumes the target offset, and returns the updated offset
+        target_offset,
+        // mutates the buffer in place
+        &mut buffer,
+        // mutates the offsets in place
+        &mut offsets,
+    )?;
 
-    Document::vtable()?.docbuf_map_replace(&field_data, &mut buffer, &offset, &mut offsets)?;
+    let doc = Document::from_docbuf(&mut buffer)?;
 
-    let mutated_data: String = Document::vtable()?.docbuf_map(&buffer, &offsets.as_ref()[0])?;
-
-    println!("Mutated Field: {:?}\n\n", mutated_data);
-
-    println!("Updated Offsets: {:?}\n\n", offsets);
-
-    assert_eq!(field_data, mutated_data);
+    assert_eq!(field_data, doc.author);
 
     Ok(())
 }
@@ -281,13 +312,21 @@ fn test_vtable_size() -> Result<(), docbuf_core::error::Error> {
 
     let mut buffer = vtable.alloc_buf();
 
-    let _offsets = doc.to_docbuf(&mut buffer)?;
+    let offsets = doc.to_docbuf(&mut buffer)?;
 
+    println!("Offsets: {:?}", offsets);
+    println!("Offsets Length: {:?}", offsets.len());
+    println!("Offsets bytes length: {:?}", offsets.as_bytes().len());
+
+    assert_eq!(
+        offsets.as_bytes().len() / VTABLE_FIELD_OFFSET_SIZE_BYTES,
+        vtable.num_offsets() as usize
+    );
     println!("Buffer: {:?}", buffer.len());
 
     println!("Num page entries: {:?}", page_size % buffer.len());
 
-    let avg_field_size = buffer.len() / vtable.num_fields as usize;
+    let avg_field_size = buffer.len() / (vtable.num_fields - vtable.num_items as u16) as usize;
 
     println!("Avg Field Size: {:?}", avg_field_size);
 
@@ -302,10 +341,148 @@ fn test_complex_db() -> Result<(), docbuf_db::Error> {
     let doc = Document::dummy();
 
     let id = doc.db_insert()?;
+    let partition_key = Some(doc.author.as_str());
 
-    let doc = Document::db_get(id)?;
+    let doc = Document::db_get(id, partition_key)?;
 
     println!("Doc: {:?}", doc);
+
+    Ok(())
+}
+
+#[test]
+fn test_vtable_hash_tag() -> Result<(), docbuf_db::Error> {
+    use std::collections::HashMap;
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let mut word_list = Vec::with_capacity(1e6 as usize);
+    let word_dict = File::open("/usr/share/dict/words")?;
+    let reader = BufReader::new(word_dict);
+    for word in reader.lines() {
+        word_list.push(word?);
+    }
+
+    let num_samples = word_list.len();
+    let mut num_collisions = 0;
+
+    let mut tag_counter = HashMap::<[u8; 2], usize>::with_capacity(100);
+    let mut tags = HashMap::<[u8; 2], String>::with_capacity(100);
+
+    for _ in 0..num_samples {
+        let random_index = rand::random::<usize>() % word_list.len();
+        let tag = word_list[random_index].clone();
+
+        let hash = VTable::hash_tag(&tag);
+
+        if let Some(tag2) = tags.get(&hash) {
+            if tag != *tag2 {
+                println!("Hash collision: {:?}", hash);
+                println!("Tag 1: {:?}", tag);
+                println!("Tag 2: {:?}\n", tag2);
+
+                let count = tag_counter.entry(hash).or_insert(0);
+                *count += 1;
+
+                num_collisions += 1;
+            }
+        }
+
+        tags.insert(hash, tag);
+    }
+
+    println!("Num Collisions: {:?}", num_collisions);
+    println!("Num Samples: {:?}", num_samples);
+    println!(
+        "Collision Percentage: {}\n",
+        num_collisions as f64 / num_samples as f64
+    );
+
+    let c1 = tag_counter.iter().filter(|(_, &v)| v == 1).count();
+    let c2 = tag_counter.iter().filter(|(_, &v)| v == 2).count();
+    let c3 = tag_counter.iter().filter(|(_, &v)| v == 3).count();
+    let c4 = tag_counter.iter().filter(|(_, &v)| v == 4).count();
+    let c5 = tag_counter.iter().filter(|(_, &v)| v == 5).count();
+    let c5p = tag_counter.iter().filter(|(_, &v)| v > 5).count();
+
+    println!("Found Tag with 1 Conflict: {:?}", c1);
+    println!("Found Tag with 2 Conflict: {:?}", c2);
+    println!("Found Tag with 3 Conflict: {:?}", c3);
+    println!("Found Tag with 4 Conflict: {:?}", c4);
+    println!("Found Tag with 5 Conflict: {:?}", c5);
+    println!("Found Tag with >5 Conflicts: {:?}\n", c5p);
+
+    // Find most conficting tag
+    let mut max_conflict = 0;
+    let mut max_conflict_tag = [0u8; 2];
+    for (tag, count) in tag_counter.iter() {
+        if *count > max_conflict {
+            max_conflict = *count;
+            max_conflict_tag = *tag;
+        }
+    }
+
+    println!("Max Conflict: {:?}", max_conflict);
+    println!("Max Conflict Tag: {:?}\n\n", max_conflict_tag);
+
+    // Find Empty Tags
+    let mut empty_tags = 0;
+    for i in 0..255 {
+        for j in 0..255 {
+            let tag = [i, j];
+            if !tags.contains_key(&tag) {
+                // println!("Empty Tag: {:?}", tag);
+                empty_tags += 1;
+            }
+        }
+    }
+
+    println!("Empty Tags: {:?}", empty_tags);
+    println!(
+        "Percentage Address Space Used: {:?}",
+        1. - (empty_tags as f64 / u16::MAX as f64)
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_complex_vtable() -> Result<(), docbuf_core::error::Error> {
+    let vtable = Document::vtable()?;
+
+    println!("VTable: {:?}", vtable);
+
+    Ok(())
+}
+
+#[test]
+fn test_partition_key() -> Result<(), docbuf_core::error::Error> {
+    let num_observations = 1e6 as usize;
+
+    let mut buckets = HashMap::new();
+
+    let doc = Document::dummy();
+
+    let doc_partition_key = doc.partition_key().expect("Failed to get partition key");
+    let doc_bucket = doc_partition_key.bucket(None);
+    println!("Partition Key: {:?}", doc_bucket);
+
+    let entries = buckets.entry(doc_bucket).or_insert(0);
+    *entries += 1;
+
+    for _ in 0..num_observations {
+        let partition_key = PartitionKey::from(rand::random::<u128>());
+        let bucket = partition_key.bucket(None);
+
+        let entries = buckets.entry(bucket).or_insert(0);
+        *entries += 1;
+    }
+
+    let first_ten = buckets.iter().take(10);
+
+    println!("Buckets: {:?}", first_ten.collect::<Vec<_>>());
+    println!("Num Buckets: {:?}", buckets.len());
+    println!("Dummy Doc Bucket: {:?}", buckets.get(&doc_bucket));
 
     Ok(())
 }
