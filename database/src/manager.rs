@@ -27,6 +27,51 @@ impl DocBufDbManager {
         Ok(Self { config, lock })
     }
 
+    pub fn write_docbuf(
+        &self,
+        partition_key: PartitionKey,
+        id: docbuf_core::uuid::Uuid,
+        buffer: Vec<u8>,
+        vtable: &VTable,
+        offsets: VTableFieldOffsets,
+    ) -> Result<(), Error> {
+        let mut page_lock = self.vtable_page_lock(vtable, partition_key)?;
+
+        println!("VTable Page Lock: {:?}", page_lock);
+
+        Ok(())
+    }
+
+    // TODO: Add a file guard to the lock file.
+    pub fn vtable_page_lock(
+        &self,
+        vtable: &VTable,
+        partition_key: PartitionKey,
+    ) -> Result<DocBufDbVTableLockFile, Error> {
+        println!("Loading vtable page lock...");
+        let path = self.config.vtable_lock_file(vtable.id())?;
+        println!("Lock Path: {:?}", path);
+        match DocBufDbVTableLockFile::load(&path) {
+            Ok(lock) => Ok(lock),
+            Err(_) => {
+                println!("Creating vtable page lock...");
+
+                // Ensure the vtable directory exists.
+                std::fs::create_dir_all(self.config.vtable_directory(vtable.id())?)?;
+
+                let mut lock = DocBufDbVTableLockFile::new(path, vtable)?;
+
+                // Add the page metadata to the lock file.
+                lock.new_page_metadata()?;
+
+                // Save the lock file, if it doesn't exist, before returning it.
+                lock.save()?;
+
+                Ok(lock)
+            }
+        }
+    }
+
     pub fn check_vtable(&self, vtable: &VTable) -> Result<(), Error> {
         // Set up the vtable if it doesn't exist.
         if !self.lock.state.vtables.contains(vtable.id()) {
@@ -37,45 +82,44 @@ impl DocBufDbManager {
     }
 
     pub fn create_vtable(&self, vtable: &VTable) -> Result<(), Error> {
-        let id = vtable.id().as_hex();
-
         // Create the vtable folder.
-        let vtable_dir = self.config.directory()?.join("vtables").join(&id);
-
-        std::fs::create_dir_all(&vtable_dir)?;
-
-        // Create the initial vtable lock file.
-        let vtable_lock = vtable_dir.join(format!("{}.lock", &id));
-        std::fs::File::create(vtable_lock)?;
-
-        // // Add the vtable to the lock file.
-        // self.lock.state.vtables.insert(vtable.id().to_owned());
-        // self.lock.save()?;
+        std::fs::create_dir_all(self.config.vtable_directory(vtable.id())?)?;
+        // Create the vtable lock file.
+        std::fs::File::create(self.config.vtable_lock_file(vtable.id())?)?;
 
         Ok(())
+    }
+
+    /// Create a vtable page for the given vtable.
+    pub fn create_vtable_page(&self, vtable: &VTable) -> Result<(), Error> {
+        unimplemented!("DocBufDbMngr method not implemented");
     }
 }
 
 impl DocBufDbMngr for DocBufDbManager {
-    /// The unique document id type.
-    type DbDocId = [u8; 16];
-
     /// The predicate type used for querying the database.
     type Predicate = ();
 
-    fn db_doc_id<D: DocBuf>(&self, _doc: &D) -> Result<Option<Self::DbDocId>, Error> {
-        let vid = D::vtable()?.id();
-
-        println!("DocBuf VTable Id: {:?}", vid);
-
-        unimplemented!("DocBufDbMngr method not implemented")
-    }
-
     /// Write a document into the database.
     /// This will return the document id.
-    fn db_insert<D: DocBuf>(&self, _doc: &D) -> Result<Self::DbDocId, Error> {
-        // Check if the vtable is in the database,
-        self.check_vtable(D::vtable()?)?;
+    fn insert<D: DocBuf>(
+        &self,
+        doc: &D,
+        partition_key: PartitionKey,
+    ) -> Result<docbuf_core::uuid::Uuid, Error> {
+        let id = doc.uuid()?;
+
+        // Return the vtable for the document.
+        let vtable = D::vtable()?;
+
+        // Allocate a buffer for the document.
+        let mut buffer = vtable.alloc_buf();
+
+        let offsets = doc.to_docbuf(&mut buffer)?;
+
+        // Write the document buffer to the database.
+        self.write_docbuf(partition_key, id, buffer, &vtable, offsets)?;
+
         // if not, return an error.
         // if !self.vtables.contains(vid.as_slice()) {
         //     // Create the vtable collection.
@@ -89,37 +133,37 @@ impl DocBufDbMngr for DocBufDbManager {
     }
 
     /// Return all documents in the database.
-    fn db_all<D: DocBuf>(&self, _doc: &D) -> Result<Vec<D>, Error> {
+    fn all<D: DocBuf>(&self, _doc: &D) -> Result<Vec<D>, Error> {
         unimplemented!("DocBufDbMngr method not implemented");
     }
 
     /// Read documents in the database given a predicate.
-    fn db_find<D: DocBuf>(&self, _doc: &D, _predicate: Self::Predicate) -> Result<Vec<D>, Error> {
+    fn find<D: DocBuf>(&self, _doc: &D, _predicate: Self::Predicate) -> Result<Vec<D>, Error> {
         unimplemented!("DocBufDbMngr method not implemented");
     }
 
     /// Get a document from the database.
-    fn db_get<D: DocBuf>(&self, _id: Self::DbDocId) -> Result<D, Error> {
+    fn get<D: DocBuf>(&self, _id: docbuf_core::uuid::Uuid) -> Result<D, Error> {
         unimplemented!("DocBufDbMngr method not implemented");
     }
 
     /// Update a document in the database.
-    fn db_update<D: DocBuf>(&self, _doc: &D) -> Result<(), Error> {
+    fn update<D: DocBuf>(&self, _doc: &D) -> Result<(), Error> {
         unimplemented!("DocBufDbMngr method not implemented");
     }
 
     /// Delete a document from the database.
-    fn db_delete<D: DocBuf>(&self, _doc: D) -> Result<D, Error> {
+    fn delete<D: DocBuf>(&self, _doc: D) -> Result<D, Error> {
         unimplemented!("DocBufDbMngr method not implemented");
     }
 
     /// Return the number of documents in the database.
-    fn db_count<D: DocBuf>(&self, _doc: &D) -> Result<usize, Error> {
+    fn count<D: DocBuf>(&self, _doc: &D) -> Result<usize, Error> {
         unimplemented!("DocBufDbMngr method not implemented");
     }
 
     /// Return the number of documents in the database given a predicate.
-    fn db_count_where(
+    fn count_where(
         &self,
         _vtable_id: &VTableId,
         _predicate: Self::Predicate,
@@ -127,7 +171,7 @@ impl DocBufDbMngr for DocBufDbManager {
         unimplemented!("DocBufDbMngr method not implemented");
     }
 
-    fn db_vtable_ids(&self) -> Result<&HashSet<VTableId>, Error> {
+    fn vtable_ids(&self) -> Result<&HashSet<VTableId>, Error> {
         unimplemented!("DocBufDbMngr method not implemented");
     }
 }

@@ -1,7 +1,9 @@
 use super::*;
 
-use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::PathBuf, str::FromStr};
+
+use docbuf_core::vtable::VTableId;
+use serde::{Deserialize, Serialize};
 
 /// Default directory for the DocBuf database.
 /// This value is used if the directory is not specified in the configuration file.
@@ -25,6 +27,7 @@ impl DocBufDbConfig {
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
 
+        // Deserialize the configuration file.
         let mut config: Self = toml::from_str(buf.as_str())?;
 
         // Setup directory with required folders.
@@ -33,8 +36,22 @@ impl DocBufDbConfig {
         Ok(config)
     }
 
-    // impl fn new(directory: Option<PathBuf>)
+    pub fn vtable_lock_file(&self, vtable_id: &VTableId) -> Result<PathBuf, Error> {
+        let dir = self.vtable_directory(vtable_id)?;
+        Ok(dir.join(format!("{}.lock", vtable_id.as_hex())))
+    }
 
+    pub fn vtable_directory(&self, vtable_id: &VTableId) -> Result<PathBuf, Error> {
+        let dir = self.vtables_directory()?;
+        Ok(dir.join(vtable_id.as_hex()))
+    }
+
+    pub fn vtables_directory(&self) -> Result<PathBuf, Error> {
+        let dir = self.directory()?;
+        Ok(dir.join("vtables"))
+    }
+
+    /// Root DocBuf database directory
     pub fn directory(&self) -> Result<&PathBuf, Error> {
         self.directory.as_ref().ok_or(Error::DirectoryNotSet)
     }
