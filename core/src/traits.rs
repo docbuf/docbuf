@@ -13,8 +13,26 @@ pub trait DocBuf {
     // inner type for the Document Buffer
     type Doc: DocBuf + std::fmt::Debug;
 
+    #[cfg(feature = "uuid")]
+    /// Return the Uuid for the document
+    ///
+    /// Set the docbuf `uuid = true` attribtute on the struct to enable it automatically.
+    /// ```
+    /// #[docbuf {
+    ///    uuid = true
+    /// }]
+    /// struct MyStruct {
+    ///    // ...
+    /// }
+    /// ```
+    ///
+    /// By default, this method will error on unimplemented structs.
+    fn uuid(&self) -> Result<crate::uuid::Uuid, error::Error> {
+        Err(error::Error::UuidNotImplemented)
+    }
+
     /// Return the virtual table (vtable) for the document buffer
-    fn vtable() -> Result<&'static VTable<'static>, error::Error>;
+    fn vtable() -> Result<&'static VTable, error::Error>;
 
     /// Convert the document to a document buffer
     fn to_docbuf<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<VTableFieldOffsets, error::Error>;
@@ -113,10 +131,10 @@ pub trait DocBufMap<T> {
     fn docbuf_map_replace(
         &self,
         new_value: &T,
+        offset: VTableFieldOffset,
         buffer: &mut Vec<u8>,
-        offset: &VTableFieldOffset,
         offsets: &mut VTableFieldOffsets,
-    ) -> Result<(), crate::vtable::Error>;
+    ) -> Result<VTableFieldOffset, crate::vtable::Error>;
 }
 
 /// DocBufEncodeField is a trait used to serialize a field to the document buffer.

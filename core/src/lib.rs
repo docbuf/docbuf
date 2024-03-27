@@ -17,5 +17,13 @@ pub mod validate {
     pub use regex;
 }
 
+#[cfg(feature = "db")]
+pub mod db {
+    // Re-export db utilities
+}
+
+#[cfg(feature = "uuid")]
+pub use uuid;
+
 // Result type for the docbuf core crate
 pub type Result<T> = std::result::Result<T, error::Error>;

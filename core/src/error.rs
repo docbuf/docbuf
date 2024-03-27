@@ -22,9 +22,12 @@ pub enum Error {
     FromUtf8(#[from] std::string::FromUtf8Error),
     #[error("Failed to create initial buffer allocation")]
     FailedToCreateBuffer,
-    // #[cfg(feature = "db")]
-    // #[error(transparent)]
-    // Database(#[from] crate::database::Error),
+    #[error(
+        "uuid not implemented, set the docbuf `uuid = true` attribtute on the struct to enable it"
+    )]
+    UuidNotImplemented,
+    #[error("partition key not implemented")]
+    PartitionKeyNotImplemented,
 }
 
 impl serde::ser::Error for Error {

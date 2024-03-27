@@ -11,14 +11,14 @@ const DEFAULT_CAPACITY_MULTIPLIER: usize = 10;
 
 #[derive(Debug)]
 pub struct DocBufSerializer<'a> {
-    pub vtable: &'static VTable<'static>,
+    pub vtable: &'static VTable,
     pub buffer: &'a mut Vec<u8>,
     pub current_item_index: u8,
     pub current_field_index: u8,
     pub previous_item_index: u8,
-    pub current_item: Option<&'static VTableItem<'static>>,
-    pub current_field: Option<&'static VTableField<'static>>,
-    pub previous_item: Option<&'static VTableItem<'static>>,
+    pub current_item: Option<&'static VTableItem>,
+    pub current_field: Option<&'static VTableField>,
+    pub previous_item: Option<&'static VTableItem>,
     pub offsets: VTableFieldOffsets,
 }
 
@@ -44,7 +44,7 @@ impl<'a> DocBufSerializer<'a> {
 
     // Return the current field or find it in the vtable based on the
     // current_item_index and current_field_index
-    pub fn current_field(&self) -> Result<&'static VTableField<'static>> {
+    pub fn current_field(&self) -> Result<&'static VTableField> {
         Ok(match self.current_field {
             Some(field) => field,
             _ => self

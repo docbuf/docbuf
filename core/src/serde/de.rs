@@ -10,14 +10,14 @@ use crate::{
 
 #[derive(Debug)]
 pub struct DocBufDeserializer<'a> {
-    vtable: &'static VTable<'static>,
+    vtable: &'static VTable,
     buffer: &'a mut Vec<u8>,
     current_item_index: VTableItemIndex,
     current_field_index: VTableFieldIndex,
-    current_item: Option<&'static VTableItem<'static>>,
-    current_field: Option<&'static VTableField<'static>>,
+    current_item: Option<&'static VTableItem>,
+    current_field: Option<&'static VTableField>,
     has_descended: bool,
-    remaining_map_entries: Option<u32>,
+    remaining_items: Option<u32>,
 }
 
 impl<'de> DocBufDeserializer<'de> {
@@ -30,13 +30,13 @@ impl<'de> DocBufDeserializer<'de> {
             current_item: None,
             current_field: None,
             has_descended: false,
-            remaining_map_entries: None,
+            remaining_items: None,
         })
     }
 
     #[inline]
     pub fn next_field(&mut self) -> Result<()> {
-        if let Some(remaining) = self.remaining_map_entries {
+        if let Some(remaining) = self.remaining_items {
             if remaining > 0 {
                 return Ok(());
             }
@@ -98,7 +98,7 @@ impl<'de> DocBufDeserializer<'de> {
     // Return the current field or find it in the vtable based on the
     // current_item_index and current_field_index
     #[inline]
-    pub fn current_field(&mut self) -> Result<&'static VTableField<'static>> {
+    pub fn current_field(&mut self) -> Result<&'static VTableField> {
         Ok(match self.current_field {
             Some(field) => field,
             _ => self.set_current_field()?,
@@ -106,7 +106,38 @@ impl<'de> DocBufDeserializer<'de> {
     }
 
     #[inline]
-    pub fn set_current_field(&mut self) -> Result<&'static VTableField<'static>> {
+    pub fn set_remaining_items(&mut self, field_type: &VTableFieldType) -> Result<()> {
+        match (&field_type, self.remaining_items) {
+            (VTableFieldType::Uuid, None) => {
+                self.remaining_items = Some(15);
+            }
+            (VTableFieldType::Bytes, None) => {
+                let data_len = u32::from_le_bytes([
+                    self.buffer[0],
+                    self.buffer[1],
+                    self.buffer[2],
+                    self.buffer[3],
+                ]) - 1;
+
+                self.buffer.drain(0..4);
+
+                self.remaining_items = Some(data_len);
+            }
+            (_, Some(n)) => {
+                if n == 1 {
+                    self.remaining_items = None;
+                } else {
+                    self.remaining_items = Some(n - 1);
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn set_current_field(&mut self) -> Result<&'static VTableField> {
         let field = self
             .vtable
             .struct_by_index(self.current_item_index)?
@@ -118,7 +149,7 @@ impl<'de> DocBufDeserializer<'de> {
 
     // Return the current item or find it in the vtable based on the current item index
     #[inline]
-    pub fn current_item(&mut self) -> Result<&'static VTableItem<'static>> {
+    pub fn current_item(&mut self) -> Result<&'static VTableItem> {
         Ok(match self.current_item {
             Some(item) => item,
             _ => self.set_current_item()?,
@@ -127,7 +158,7 @@ impl<'de> DocBufDeserializer<'de> {
 
     // Set the current item based on the current item index
     #[inline]
-    pub fn set_current_item(&mut self) -> Result<&'static VTableItem<'static>> {
+    pub fn set_current_item(&mut self) -> Result<&'static VTableItem> {
         let item = self.vtable.item_by_index(self.current_item_index)?;
         self.current_item = Some(item);
         Ok(item)
@@ -163,9 +194,9 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
 
         // Set the hash map field items to the length of the data.
         if let VTableFieldType::HashMap { .. } = &field.r#type {
-            match self.remaining_map_entries {
+            match self.remaining_items {
                 None => {
-                    self.remaining_map_entries = Some(u32::from_le_bytes([
+                    self.remaining_items = Some(u32::from_le_bytes([
                         self.buffer[0],
                         self.buffer[1],
                         self.buffer[2],
@@ -176,7 +207,7 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
                     self.buffer.drain(0..3);
                 }
                 Some(0) => {
-                    self.remaining_map_entries = None;
+                    self.remaining_items = None;
                     self.next_field()?;
                     return Ok(None);
                 }
@@ -196,7 +227,7 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
         // Decrement the remaining field items if it is set
         if let VTableFieldType::HashMap { .. } = &self.current_field()?.r#type {
             // Decrement the remaining field items if it is set
-            self.remaining_map_entries.as_mut().map(|x| *x -= 1);
+            self.remaining_items.as_mut().map(|x| *x -= 1);
         };
 
         value
@@ -255,6 +286,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
             VTableFieldType::Str => self.deserialize_str(visitor),
             VTableFieldType::Vec => self.deserialize_seq(visitor),
             VTableFieldType::HashMap { .. } => visitor.visit_map(self),
+            VTableFieldType::Uuid => unimplemented!("UUID not implemented"),
         }
     }
 
@@ -331,7 +363,13 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let value = self.current_field()?.decode(self.buffer)?;
+        let field = self.current_field()?;
+
+        dbg!("Field: {:?}", field);
+
+        self.set_remaining_items(&field.r#type)?;
+
+        let value = field.decode(self.buffer)?;
 
         self.next_field()?;
 
@@ -342,7 +380,9 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let value = self.current_field()?.decode(self.buffer)?;
+        let field = self.current_field()?;
+
+        let value = field.decode(self.buffer)?;
 
         self.next_field()?;
 
@@ -439,7 +479,13 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
 
         let value = field.decode(self.buffer)?;
 
-        self.next_field()?;
+        match field.r#type {
+            // Ignore Uuid field.
+            VTableFieldType::Uuid => {}
+            _ => {
+                self.next_field()?;
+            }
+        }
 
         visitor.visit_string(value)
     }
@@ -567,7 +613,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         match &field.r#type {
             VTableFieldType::Struct(_) => {
                 self.next_field()?;
-                visitor.visit_str(field.name)
+                visitor.visit_str(&field.name)
             }
             VTableFieldType::HashMap { key, .. } => match key.as_ref() {
                 VTableFieldType::String => {
@@ -580,7 +626,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
                     unimplemented!("deserialize_identifier for hash map key type: {:?}", key);
                 }
             },
-            _ => visitor.visit_str(field.name),
+            _ => visitor.visit_str(&field.name),
         }
     }
 
