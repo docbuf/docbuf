@@ -1,12 +1,10 @@
-use std::str::FromStr;
-
 use std::collections::{HashMap, HashSet};
 
 use docbuf_core::vtable::*;
 
 use proc_macro2::{token_stream, Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
-use syn::{DeriveInput, ItemStruct, Meta};
+use syn::{DeriveInput, ItemStruct};
 
 pub const DEFAULT_NAMESPACE: &str = "default";
 
@@ -246,7 +244,7 @@ pub fn docbuf_impl_db(
     return TokenStream::new();
 
     // Check if the db_config option is present
-    let db_mngr = options.db_mngr();
+    // let db_mngr = options.db_mngr();
 
     // Implement partition key, if it is present.
     let partition_key = docbuf_impl_partition(options, item);
@@ -258,70 +256,70 @@ pub fn docbuf_impl_db(
             /// The predicate type used for querying the database.
             type Predicate = ();
 
-            /// Return a database client.
-            fn db() -> Result<Self::Db, ::docbuf_db::Error> {
-                Ok(#db_mngr)
-            }
-
             /// Write a document into the database.
             /// This will return the document id.
-            fn db_insert(&self) -> Result<::docbuf_core::uuid::Uuid, ::docbuf_db::Error> {
+            fn db_insert(&self, db: &Self::Db) -> Result<::docbuf_core::deps::uuid::Uuid, ::docbuf_db::Error> {
                 use ::docbuf_db::DocBufDbMngr;
-                let db = Self::db()?;
+
+                // Setup the vtable for the document.
+                let vtable = Self::vtable()?;
+                db.write_vtable(&vtable)?;
+
                 let partition_key = self.partition_key()?;
 
                 db.insert(self, partition_key)
             }
 
             /// Return all documents in the database.
-            fn db_all() -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
+            fn db_all(db: &Self::Db) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
             /// Read documents in the database given a predicate.
-            fn db_find(predicate: Self::Predicate) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
+            fn db_find(db: &Self::Db, predicate: Self::Predicate) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
             /// Get a document from the database.
-            fn db_get(id: ::docbuf_core::uuid::Uuid, partition_key: Option<impl Into<::docbuf_db::PartitionKey>>) -> Result<Self::Doc, ::docbuf_db::Error> {
+            fn db_get(db: &Self::Db, id: ::docbuf_core::deps::uuid::Uuid, partition_key: Option<impl Into<::docbuf_db::PartitionKey>>) -> Result<Self::Doc, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
             /// Get a document partition from the database.
-            fn db_get_partition(partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
+            fn db_get_partition(db: &Self::Db, partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
             /// Update a document in the database.
-            fn db_update(&self) -> Result<(), ::docbuf_db::Error> {
+            fn db_update(&self, db: &Self::Db) -> Result<(), ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
             /// Delete a document from the database.
-            fn db_delete(self) -> Result<Self::Doc, ::docbuf_db::Error> {
+            fn db_delete(self, db: &Self::Db) -> Result<Self::Doc, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
             /// Delete a document partition from the database.
-            fn db_delete_partition(partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<(), ::docbuf_db::Error> {
+            fn db_delete_partition(db: &Self::Db, partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<(), ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
             /// Return the number of documents in the database.
-            fn db_count() -> Result<usize, ::docbuf_db::Error> {
+            fn db_count(db: &Self::Db) -> Result<usize, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
             /// Return the number of documents in the database given a predicate.
             fn db_count_where(
+                db: &Self::Db,
                 predicate: Self::Predicate,
             ) -> Result<usize, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
             /// Return the number of documents in the database given a partition key.
-            fn db_count_partition(partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<usize, ::docbuf_db::Error> {
+            fn db_count_partition(db: &Self::Db, partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<usize, ::docbuf_db::Error> {
                 unimplemented!("DocBufDb method not implemented")
             }
 
@@ -477,7 +475,7 @@ pub fn docbuf_impl_vtable(
 pub fn docbuf_impl_uuid(options: &DocBufOpts) -> TokenStream {
     if options.uuid() {
         let output = quote! {
-            fn uuid(&self) -> Result<::docbuf_core::uuid::Uuid, ::docbuf_core::error::Error> {
+            fn uuid(&self) -> Result<::docbuf_core::deps::uuid::Uuid, ::docbuf_core::error::Error> {
                 Ok(self._uuid)
             }
         };
@@ -552,8 +550,8 @@ pub fn parse_item_derivatives(input: &TokenStream) -> TokenStream {
 }
 
 // Parse the item fields from the input stream
-pub fn parse_item_fields(input: &TokenStream, options: &DocBufOpts) -> TokenStream {
-    let ast: ItemStruct = syn::parse(input.to_owned().into()).expect("Failed to parse input");
+pub fn parse_item_fields(item: &TokenStream, options: &DocBufOpts) -> TokenStream {
+    let ast: ItemStruct = syn::parse(item.to_owned().into()).expect("Failed to parse item fields.");
     let fields = ast.fields.iter().map(|field| {
         let name = field
             .ident
@@ -589,8 +587,8 @@ pub fn parse_item_fields(input: &TokenStream, options: &DocBufOpts) -> TokenStre
     let id_field = match options.uuid() {
         true => quote! {
             /// DocBuf Universal Doc ID
-            #[serde(with = "::docbuf_core::uuid::serde::compact")]
-            pub _uuid: ::docbuf_core::uuid::Uuid,
+            #[serde(with = "::docbuf_core::deps::uuid::serde::compact")]
+            pub _uuid: ::docbuf_core::deps::uuid::Uuid,
         },
         false => quote! {},
     };
