@@ -1,4 +1,4 @@
-use docbuf_core::{traits::DocBuf, uuid::Uuid};
+use docbuf_core::{deps::uuid::Uuid, traits::DocBuf};
 use docbuf_db::traits::*;
 use docbuf_macros::*;
 use serde::{Deserialize, Serialize};

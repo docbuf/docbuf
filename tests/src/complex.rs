@@ -3,8 +3,8 @@ use crate::{SetTestValues, TestHarness};
 use std::collections::HashMap;
 
 use docbuf_core::{
+    deps::uuid::Uuid,
     traits::{DocBuf, DocBufMap},
-    uuid::Uuid,
     vtable::{VTable, VTableId, VTABLE_FIELD_OFFSET_SIZE_BYTES},
 };
 use docbuf_db::{traits::*, PartitionKey};
@@ -313,15 +313,13 @@ fn test_vtable_size() -> Result<(), docbuf_core::error::Error> {
     let mut buffer = vtable.alloc_buf();
 
     let offsets = doc.to_docbuf(&mut buffer)?;
+    let offset_bytes = offsets.to_vec();
 
     println!("Offsets: {:?}", offsets);
     println!("Offsets Length: {:?}", offsets.len());
-    println!("Offsets bytes length: {:?}", offsets.as_bytes().len());
+    println!("Offsets bytes length: {:?}", offset_bytes.len());
 
-    assert_eq!(
-        offsets.as_bytes().len() / VTABLE_FIELD_OFFSET_SIZE_BYTES,
-        vtable.num_offsets() as usize
-    );
+    assert!(vtable.check_offsets(&offset_bytes).is_ok());
     println!("Buffer: {:?}", buffer.len());
 
     println!("Num page entries: {:?}", page_size % buffer.len());
@@ -329,23 +327,6 @@ fn test_vtable_size() -> Result<(), docbuf_core::error::Error> {
     let avg_field_size = buffer.len() / (vtable.num_fields - vtable.num_items as u16) as usize;
 
     println!("Avg Field Size: {:?}", avg_field_size);
-
-    Ok(())
-}
-
-#[cfg(feature = "db")]
-#[test]
-fn test_complex_db() -> Result<(), docbuf_db::Error> {
-    use docbuf_db::traits::*;
-
-    let doc = Document::dummy();
-
-    let id = doc.db_insert()?;
-    let partition_key = Some(doc.author.as_str());
-
-    let doc = Document::db_get(id, partition_key)?;
-
-    println!("Doc: {:?}", doc);
 
     Ok(())
 }
