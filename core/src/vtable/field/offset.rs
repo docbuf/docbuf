@@ -98,7 +98,7 @@ impl VTableFieldOffsets {
     }
 
     #[inline]
-    pub fn as_bytes(&self) -> Vec<u8> {
+    pub fn to_vec(&self) -> Vec<u8> {
         self.0
             .iter()
             .flat_map(|offset| offset.as_bytes())

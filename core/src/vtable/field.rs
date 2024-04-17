@@ -21,7 +21,7 @@ pub use validate::*;
 
 use crate::traits::{DocBufDecodeField, DocBufEncodeField, DocBufValidateField};
 
-use std::ops::Range;
+use std::ops::{Deref, Range};
 use std::{cmp::Ordering, str::FromStr};
 
 use serde_derive::{Deserialize, Serialize};
@@ -96,6 +96,90 @@ impl VTableField {
 
         Ok(())
     }
+
+    #[inline]
+    pub fn write_to_buffer(&self, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        // Push the item index
+        buffer.push(self.item_index);
+
+        // Write the field type
+        buffer.push(self.r#type.clone().into());
+
+        // If the field type is a struct, write the struct name.
+        match &self.r#type {
+            VTableFieldType::Struct(name) => {
+                let name_bytes = name.as_bytes();
+                buffer.push(name_bytes.len() as u8);
+                buffer.extend_from_slice(name_bytes);
+            }
+            VTableFieldType::HashMap { key, value } => {
+                buffer.push(key.deref().to_owned().into());
+                buffer.push(value.deref().to_owned().into());
+            }
+            _ => (),
+        }
+
+        // Write the field index
+        buffer.push(self.index);
+
+        // Write the field name
+        let name_bytes = self.name.as_bytes();
+
+        buffer.push(name_bytes.len() as u8);
+        buffer.extend_from_slice(name_bytes);
+
+        // Write the field rules
+        self.rules.write_to_buffer(buffer)?;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn read_from_buffer(buffer: &mut Vec<u8>) -> Result<Self, Error> {
+        // Read the item index
+        let item_index = buffer.remove(0);
+
+        // Read the field type
+        let mut r#type = VTableFieldType::try_from(buffer.remove(0))?;
+
+        // If the type is a struct, read the struct name
+        match r#type {
+            VTableFieldType::Struct(_) => {
+                let name_len = buffer.remove(0);
+                let name = buffer.drain(0..name_len as usize).collect::<Vec<u8>>();
+                let name = String::from_utf8(name)?;
+
+                r#type = VTableFieldType::Struct(name);
+            }
+            VTableFieldType::HashMap { .. } => {
+                let key = Box::new(VTableFieldType::try_from(buffer.remove(0))?);
+                let value = Box::new(VTableFieldType::try_from(buffer.remove(0))?);
+
+                r#type = VTableFieldType::HashMap { key, value };
+            }
+            _ => (),
+        }
+
+        // Read the field index
+        let index = buffer.remove(0);
+
+        // Read the field name
+        let name_len = buffer.remove(0);
+        let name = buffer.drain(0..name_len as usize).collect::<Vec<u8>>();
+
+        let name = String::from_utf8(name)?;
+
+        // Read the field rules
+        let rules = VTableFieldRules::read_from_buffer(buffer)?;
+
+        Ok(Self {
+            item_index,
+            r#type,
+            index,
+            name,
+            rules,
+        })
+    }
 }
 
 impl std::fmt::Display for VTableField {
@@ -111,7 +195,14 @@ impl std::fmt::Display for VTableField {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VTableFields(pub Vec<VTableField>);
 
+impl Default for VTableFields {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VTableFields {
+    #[inline]
     pub fn new() -> Self {
         Self(Vec::with_capacity(256))
     }
@@ -150,9 +241,36 @@ impl VTableFields {
     pub fn find_field_by_name(&self, name: &str) -> Option<&VTableField> {
         self.0.iter().find(|field| field.name == name)
     }
+
+    #[inline]
+    pub fn write_to_buffer(&self, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        // Write each field
+        for field in self.0.iter() {
+            field.write_to_buffer(buffer)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl PartialEq for VTableFields {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl PartialEq for VTableField {
+    fn eq(&self, other: &Self) -> bool {
+        self.item_index == other.item_index
+            && self.r#type == other.r#type
+            && self.index == other.index
+            && self.name == other.name
+            && self.rules == other.rules
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[repr(u8)]
 pub enum VTableFieldType {
     U8,
     U16,
@@ -275,9 +393,11 @@ impl From<&str> for VTableFieldType {
     }
 }
 
-impl From<u8> for VTableFieldType {
-    fn from(byte: u8) -> Self {
-        match byte {
+impl TryFrom<u8> for VTableFieldType {
+    type Error = Error;
+
+    fn try_from(byte: u8) -> Result<Self, Error> {
+        let r#type = match byte {
             0 => VTableFieldType::U8,
             1 => VTableFieldType::U16,
             2 => VTableFieldType::U32,
@@ -303,8 +423,10 @@ impl From<u8> for VTableFieldType {
                 value: Box::new(VTableFieldType::U8),
             },
             21 => VTableFieldType::Uuid,
-            _ => todo!("Handle unknown field type"),
-        }
+            _ => return Err(Error::UnknownFieldType(byte)),
+        };
+
+        Ok(r#type)
     }
 }
 
@@ -333,6 +455,39 @@ impl Into<u8> for VTableFieldType {
             VTableFieldType::Struct(_) => 19,
             VTableFieldType::HashMap { .. } => 20, //
             VTableFieldType::Uuid => 21,
+        }
+    }
+}
+
+impl PartialEq for VTableFieldType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (VTableFieldType::U8, VTableFieldType::U8)
+            | (VTableFieldType::U16, VTableFieldType::U16)
+            | (VTableFieldType::U32, VTableFieldType::U32)
+            | (VTableFieldType::U64, VTableFieldType::U64)
+            | (VTableFieldType::U128, VTableFieldType::U128)
+            | (VTableFieldType::USIZE, VTableFieldType::USIZE)
+            | (VTableFieldType::I8, VTableFieldType::I8)
+            | (VTableFieldType::I16, VTableFieldType::I16)
+            | (VTableFieldType::I32, VTableFieldType::I32)
+            | (VTableFieldType::I64, VTableFieldType::I64)
+            | (VTableFieldType::I128, VTableFieldType::I128)
+            | (VTableFieldType::ISIZE, VTableFieldType::ISIZE)
+            | (VTableFieldType::F32, VTableFieldType::F32)
+            | (VTableFieldType::F64, VTableFieldType::F64)
+            | (VTableFieldType::String, VTableFieldType::String)
+            | (VTableFieldType::Str, VTableFieldType::Str)
+            | (VTableFieldType::Vec, VTableFieldType::Vec)
+            | (VTableFieldType::Bytes, VTableFieldType::Bytes)
+            | (VTableFieldType::Bool, VTableFieldType::Bool)
+            | (VTableFieldType::Uuid, VTableFieldType::Uuid) => true,
+            (VTableFieldType::Struct(s1), VTableFieldType::Struct(s2)) => s1 == s2,
+            (
+                VTableFieldType::HashMap { key: k1, value: v1 },
+                VTableFieldType::HashMap { key: k2, value: v2 },
+            ) => k1 == k2 && v1 == v2,
+            _ => false,
         }
     }
 }

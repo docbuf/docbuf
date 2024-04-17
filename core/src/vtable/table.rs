@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use super::*;
 
 use serde_derive::{Deserialize, Serialize};
@@ -34,6 +36,32 @@ impl AsRef<[u8]> for VTableId {
     }
 }
 
+impl Deref for VTableId {
+    type Target = [u8; 8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<&VTableId> for VTableId {
+    fn from(src: &VTableId) -> Self {
+        src.to_owned()
+    }
+}
+
+impl From<&VTable> for VTableId {
+    fn from(src: &VTable) -> Self {
+        src.id().to_owned()
+    }
+}
+
+impl From<&[u8; 8]> for VTableId {
+    fn from(src: &[u8; 8]) -> Self {
+        Self(*src)
+    }
+}
+
 impl From<&[u8]> for VTableId {
     fn from(src: &[u8]) -> Self {
         let mut id = [0; 8];
@@ -51,6 +79,18 @@ impl From<u64> for VTableId {
 impl From<VTableId> for u64 {
     fn from(src: VTableId) -> u64 {
         u64::from_le_bytes(src.0)
+    }
+}
+
+impl From<[u8; 8]> for VTableId {
+    fn from(src: [u8; 8]) -> Self {
+        Self(src)
+    }
+}
+
+impl Into<[u8; 8]> for VTableId {
+    fn into(self) -> [u8; 8] {
+        self.0
     }
 }
 
@@ -107,6 +147,101 @@ impl VTable {
             items: VTableItems::new(),
             num_items: 0,
             num_fields: 0,
+        }
+    }
+
+    #[inline]
+    /// Serialize the vtable into a byte buffer.
+    pub fn write_to_buffer(&self, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        // Clear the buffer
+        buffer.clear();
+
+        // Serialize the vtable
+        let namespace_bytes = self.namespace.as_bytes();
+        let namespace_len = namespace_bytes.len() as u8;
+        buffer.push(namespace_len);
+        buffer.extend_from_slice(namespace_bytes);
+
+        let root_bytes = self.root.as_bytes();
+        let root_len = root_bytes.len() as u8;
+        buffer.push(root_len);
+        buffer.extend_from_slice(root_bytes);
+
+        buffer.push(self.num_items as u8);
+        buffer.extend_from_slice(&self.num_fields.to_le_bytes());
+
+        for item in self.items.iter() {
+            item.write_to_buffer(buffer)?;
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn read_from_buffer(buffer: &mut Vec<u8>) -> Result<Self, Error> {
+        let namespace_len = buffer.remove(0);
+        let namespace = String::from_utf8(buffer.drain(0..namespace_len as usize).collect())?;
+
+        let root_len = buffer.remove(0);
+        let root = String::from_utf8(buffer.drain(0..root_len as usize).collect())?;
+
+        let num_items = buffer.remove(0);
+        let num_fields = u16::from_le_bytes([buffer[0], buffer[1]]);
+        buffer.drain(0..2);
+
+        let mut vtable = Self::new(namespace, root);
+
+        vtable.num_items = num_items;
+        vtable.num_fields = num_fields;
+
+        for _ in 0..num_items {
+            let item = VTableItem::read_from_buffer(buffer)?;
+
+            vtable.items.0.push(item);
+        }
+
+        Ok(vtable)
+    }
+
+    #[cfg(feature = "std")]
+    #[inline]
+    /// Read VTable from a file.
+    pub fn from_file(path: impl Into<std::path::PathBuf>) -> Result<Self, Error> {
+        use std::io::Read;
+
+        let path = path.into();
+        let mut file = std::fs::File::open(&path)?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+        Self::read_from_buffer(&mut buf)
+    }
+
+    pub fn to_vec(&self) -> Result<Vec<u8>, Error> {
+        let mut buf = Vec::new();
+        self.write_to_buffer(&mut buf)?;
+        Ok(buf)
+    }
+
+    #[cfg(feature = "std")]
+    #[inline]
+    /// Write VTable to a file.
+    pub fn to_file(&self, path: impl Into<std::path::PathBuf>) -> Result<(), Error> {
+        use std::io::Write;
+
+        let path = path.into();
+        let mut file = std::fs::File::create(&path)?;
+        let mut buf = Vec::new();
+        self.write_to_buffer(&mut buf)?;
+        file.write_all(&buf)?;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn add_item(&mut self, vtable_item: VTableItem) {
+        match vtable_item {
+            VTableItem::Struct(vtable_struct) => {
+                self.add_struct(vtable_struct);
+            }
         }
     }
 
@@ -291,5 +426,27 @@ impl VTable {
         // Add 1 to account for the root item offset
         // Substract the number of items to account for the flat array of offsets
         self.num_fields + 1 - self.num_items as u16
+    }
+
+    #[inline]
+    /// Check the byte offsets against the vtable.
+    pub fn check_offsets(&self, offsets: &[u8]) -> Result<(), Error> {
+        let num_offsets = (offsets.len() / VTABLE_FIELD_OFFSET_SIZE_BYTES) as u16;
+
+        if num_offsets != self.num_offsets() {
+            return Err(Error::InvalidOffsets(self.num_offsets(), num_offsets));
+        }
+
+        Ok(())
+    }
+}
+
+impl PartialEq for VTable {
+    fn eq(&self, other: &Self) -> bool {
+        self.namespace == other.namespace
+            && self.root == other.root
+            && self.items == other.items
+            && self.num_items == other.num_items
+            && self.num_fields == other.num_fields
     }
 }

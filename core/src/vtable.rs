@@ -56,6 +56,17 @@ pub enum Error {
     Hex(#[from] hex::FromHexError),
     #[error(transparent)]
     Uuid(#[from] uuid::Error),
+    #[error("Invalid VTable Offset Bytes. Expected byte length: {0}; found: {1}")]
+    InvalidOffsets(u16, u16),
+    #[cfg(feature = "std")]
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("Failed to read vtable from file: {0}")]
+    ReadVTableBuffer(String),
+    #[error("Unknown VTable Field Type: {0}")]
+    UnknownFieldType(u8),
+    #[error("Invalid Numeric Value Type: {0}")]
+    InvalidNumericValueType(u8),
 }
 
 #[cfg(test)]

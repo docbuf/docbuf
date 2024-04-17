@@ -22,8 +22,13 @@ pub mod db {
     // Re-export db utilities
 }
 
-#[cfg(feature = "uuid")]
-pub use uuid;
+// Re-export the necessary deps for the docbuf core crate
+pub mod deps {
+    pub use hex;
+
+    #[cfg(feature = "uuid")]
+    pub use uuid;
+}
 
 // Result type for the docbuf core crate
 pub type Result<T> = std::result::Result<T, error::Error>;

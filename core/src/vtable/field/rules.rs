@@ -8,14 +8,20 @@ use serde_derive::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VTableFieldRules {
     pub ignore: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_value: Option<NumericValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_value: Option<NumericValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_length: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub min_length: Option<usize>,
-    // An absolute length
+    /// An absolute length
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub length: Option<usize>,
     // #[cfg(feature = "regex")]
     /// A regex pattern to match
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub regex: Option<String>,
     pub sign: bool,
 }
@@ -187,4 +193,140 @@ impl VTableFieldRules {
 
         Ok(())
     }
+
+    #[inline]
+    pub fn write_to_buffer(&self, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        buffer.push(self.ignore as u8);
+        buffer.push(self.sign as u8);
+
+        if let Some(max_value) = &self.max_value {
+            buffer.push(1);
+            max_value.write_to_buffer(buffer)?;
+        } else {
+            buffer.push(0);
+        }
+
+        if let Some(min_value) = &self.min_value {
+            buffer.push(1);
+            min_value.write_to_buffer(buffer)?;
+        } else {
+            buffer.push(0);
+        }
+
+        if let Some(max_length) = self.max_length {
+            buffer.push(1);
+            buffer.extend_from_slice(&max_length.to_le_bytes());
+        } else {
+            buffer.push(0);
+        }
+
+        if let Some(min_length) = self.min_length {
+            buffer.push(1);
+            buffer.extend_from_slice(&min_length.to_le_bytes());
+        } else {
+            buffer.push(0);
+        }
+
+        if let Some(length) = self.length {
+            buffer.push(1);
+            buffer.extend_from_slice(&length.to_le_bytes());
+        } else {
+            buffer.push(0);
+        }
+
+        if let Some(regex) = &self.regex {
+            buffer.push(1);
+            let regex_bytes = regex.as_bytes();
+            // Max Regex length is 255
+            let regex_len = regex_bytes.len() as u16;
+            buffer.extend_from_slice(&regex_len.to_le_bytes());
+            buffer.extend_from_slice(regex_bytes);
+        } else {
+            buffer.push(0);
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn read_from_buffer(buffer: &mut Vec<u8>) -> Result<Self, Error> {
+        let ignore = buffer.remove(0) == 1;
+        let sign = buffer.remove(0) == 1;
+
+        let read_value = |buffer: &mut Vec<u8>| -> usize {
+            let value = usize::from_le_bytes([
+                buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
+                buffer[7],
+            ]);
+
+            buffer.drain(0..8);
+
+            value
+        };
+
+        let max_value = if buffer.remove(0) == 1 {
+            Some(NumericValue::read_from_buffer(buffer)?)
+        } else {
+            None
+        };
+
+        let min_value = if buffer.remove(0) == 1 {
+            Some(NumericValue::read_from_buffer(buffer)?)
+        } else {
+            None
+        };
+
+        let max_length = if buffer.remove(0) == 1 {
+            Some(read_value(buffer))
+        } else {
+            None
+        };
+
+        let min_length = if buffer.remove(0) == 1 {
+            Some(read_value(buffer))
+        } else {
+            None
+        };
+
+        let length = if buffer.remove(0) == 1 {
+            Some(read_value(buffer))
+        } else {
+            None
+        };
+
+        let regex = if buffer.remove(0) == 1 {
+            let len = u16::from_be_bytes([buffer[0], buffer[1]]) as usize;
+            buffer.drain(0..2);
+            let regex = String::from_utf8(buffer.drain(0..len).collect())?;
+            Some(regex)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            ignore,
+            sign,
+            max_value,
+            min_value,
+            max_length,
+            min_length,
+            length,
+            regex,
+        })
+    }
 }
+
+impl PartialEq for VTableFieldRules {
+    fn eq(&self, other: &Self) -> bool {
+        self.ignore == other.ignore
+            && self.sign == other.sign
+            && self.max_value == other.max_value
+            && self.min_value == other.min_value
+            && self.max_length == other.max_length
+            && self.min_length == other.min_length
+            && self.length == other.length
+            && self.regex == other.regex
+    }
+}
+
+impl Eq for VTableFieldRules {}

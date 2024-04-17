@@ -27,7 +27,7 @@ pub trait DocBuf {
     /// ```
     ///
     /// By default, this method will error on unimplemented structs.
-    fn uuid(&self) -> Result<crate::uuid::Uuid, error::Error> {
+    fn uuid(&self) -> Result<crate::deps::uuid::Uuid, error::Error> {
         Err(error::Error::UuidNotImplemented)
     }
 

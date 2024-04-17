@@ -4,7 +4,7 @@ use serde_derive::{Deserialize, Serialize};
 
 pub type StructName = String; //  = &'a str;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct VTableStruct {
     pub item_index: VTableItemIndex,
     pub name: StructName,
@@ -69,7 +69,6 @@ impl VTableStruct {
     // Return the field by name from the struct
     #[inline]
     pub fn field_by_name(&self, name: &str) -> Result<&VTableField, Error> {
-        // println!("Field By Name");
         self.fields
             .find_field_by_name(name)
             .ok_or(Error::FieldNotFound)
@@ -78,7 +77,6 @@ impl VTableStruct {
     // Return the field by index from the struct
     #[inline]
     pub fn field_by_index(&self, index: &VTableFieldIndex) -> Result<&VTableField, Error> {
-        // println!("Field By Index");
         for field in self.fields.iter() {
             if field.index == *index {
                 return Ok(field);
@@ -94,5 +92,58 @@ impl VTableStruct {
         index: &VTableFieldIndex,
     ) -> Result<&VTableFieldRules, Error> {
         self.field_by_index(index).map(|field| &field.rules)
+    }
+
+    #[inline]
+    pub fn write_to_buffer(&self, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        // Item index it belongs to
+        buffer.push(self.item_index);
+
+        // Name of the struct
+        let name_bytes = self.name.as_bytes();
+        let name_len = name_bytes.len() as u8;
+        buffer.push(name_len);
+        buffer.extend_from_slice(name_bytes);
+
+        // Number of fields in the struct
+        buffer.push(self.num_fields);
+
+        // Serialize the fields
+        for field in self.fields.iter() {
+            field.write_to_buffer(buffer)?;
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn read_from_buffer(buffer: &mut Vec<u8>) -> Result<Self, Error> {
+        let item_index = buffer.remove(0);
+        let name_len = buffer.remove(0) as usize;
+        let name = String::from_utf8(buffer.drain(0..name_len).collect())?;
+
+        let num_fields = buffer.remove(0);
+
+        let mut fields = VTableFields::new();
+        for _ in 0..num_fields {
+            let field = VTableField::read_from_buffer(buffer)?;
+            fields.add_field(field);
+        }
+
+        Ok(Self {
+            item_index,
+            name,
+            fields,
+            num_fields,
+        })
+    }
+}
+
+impl PartialEq for VTableStruct {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.fields == other.fields
+            && self.num_fields == other.num_fields
+            && self.item_index == other.item_index
     }
 }
