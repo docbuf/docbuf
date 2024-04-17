@@ -1,0 +1,14 @@
+[package]
+name = "docbuf-rpc"
+version = "0.1.0"
+edition = "2021"
+description = "A Remote Procedure Call (RPC) library for DocBuf documents."
+
+[dependencies]
+boring = "4.6.0"
+mio = { version = "0.8.11", features = ["net", "os-poll"] }
+quiche = { path = "../../quiche/quiche", features = ["boringssl-boring-crate"] }
+# quiche = "0.20.1"
+ring = "0.17.8"
+thiserror = "1.0.58"
+tracing = "0.1.40"

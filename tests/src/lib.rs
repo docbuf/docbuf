@@ -3,8 +3,14 @@
 
 // pub mod benchmarks;
 pub mod complex;
+#[cfg(feature = "db")]
+pub mod database;
+pub mod process;
+#[cfg(feature = "rpc")]
+pub mod rpc;
 pub mod strings;
 pub mod unsigned_integers;
+pub mod vtable;
 
 use docbuf_core::traits::DocBuf;
 use serde::{Deserialize, Serialize};
