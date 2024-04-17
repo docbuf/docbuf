@@ -7,92 +7,53 @@ use docbuf_core::traits::DocBuf;
 use docbuf_core::vtable::*;
 
 use std::collections::HashSet;
-// use std::io::Write;
+use std::ops::Deref;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default)]
 pub struct DocBufDbManager {
     /// Configuration for the database
     pub config: DocBufDbConfig,
-    /// Lock file for the database
-    pub lock: DocBufDbLock,
 }
 
 impl DocBufDbManager {
     pub fn from_config(config_path: impl Into<PathBuf>) -> Result<Self, Error> {
         let config = DocBufDbConfig::load(config_path.into())?;
 
-        let lock = DocBufDbLock::load(config.directory()?.clone())?;
-
-        Ok(Self { config, lock })
+        Ok(Self { config })
     }
 
     pub fn write_docbuf(
         &self,
-        partition_key: PartitionKey,
-        id: docbuf_core::uuid::Uuid,
+        id: &[u8; 16],
         buffer: Vec<u8>,
-        vtable: &VTable,
-        offsets: VTableFieldOffsets,
+        vtable_id: &[u8; 8],
+        partition_key: &[u8; 16],
+        offsets: Vec<u8>,
     ) -> Result<(), Error> {
-        let mut page_lock = self.vtable_page_lock(vtable, partition_key)?;
+        let mut partition = self.config.partition_file(vtable_id, partition_key)?;
 
-        println!("VTable Page Lock: {:?}", page_lock);
+        partition.write_docbuf(buffer, offsets)?;
 
-        Ok(())
-    }
+        // let mut page_lock = self.vtable_page_lock(vtable, partition_key)?;
 
-    // TODO: Add a file guard to the lock file.
-    pub fn vtable_page_lock(
-        &self,
-        vtable: &VTable,
-        partition_key: PartitionKey,
-    ) -> Result<DocBufDbVTableLockFile, Error> {
-        println!("Loading vtable page lock...");
-        let path = self.config.vtable_lock_file(vtable.id())?;
-        println!("Lock Path: {:?}", path);
-        match DocBufDbVTableLockFile::load(&path) {
-            Ok(lock) => Ok(lock),
-            Err(_) => {
-                println!("Creating vtable page lock...");
-
-                // Ensure the vtable directory exists.
-                std::fs::create_dir_all(self.config.vtable_directory(vtable.id())?)?;
-
-                let mut lock = DocBufDbVTableLockFile::new(path, vtable)?;
-
-                // Add the page metadata to the lock file.
-                lock.new_page_metadata()?;
-
-                // Save the lock file, if it doesn't exist, before returning it.
-                lock.save()?;
-
-                Ok(lock)
-            }
-        }
-    }
-
-    pub fn check_vtable(&self, vtable: &VTable) -> Result<(), Error> {
-        // Set up the vtable if it doesn't exist.
-        if !self.lock.state.vtables.contains(vtable.id()) {
-            self.create_vtable(vtable)?;
-        }
+        // println!("VTable Page Lock: {:?}", page_lock);
 
         Ok(())
     }
 
-    pub fn create_vtable(&self, vtable: &VTable) -> Result<(), Error> {
-        // Create the vtable folder.
-        std::fs::create_dir_all(self.config.vtable_directory(vtable.id())?)?;
-        // Create the vtable lock file.
-        std::fs::File::create(self.config.vtable_lock_file(vtable.id())?)?;
+    /// Read vtable file from the database.
+    pub fn read_vtable(&self, vtable_id: &[u8; 8]) -> Result<VTable, Error> {
+        let vtable = self.config.read_vtable(vtable_id)?;
 
-        Ok(())
+        Ok(vtable)
     }
 
-    /// Create a vtable page for the given vtable.
-    pub fn create_vtable_page(&self, vtable: &VTable) -> Result<(), Error> {
-        unimplemented!("DocBufDbMngr method not implemented");
+    pub fn write_vtable(&self, vtable: &VTable) -> Result<(), Error> {
+        // Crate the vtable file
+        self.config.write_vtable(vtable)?;
+
+        Ok(())
     }
 }
 
@@ -106,7 +67,7 @@ impl DocBufDbMngr for DocBufDbManager {
         &self,
         doc: &D,
         partition_key: PartitionKey,
-    ) -> Result<docbuf_core::uuid::Uuid, Error> {
+    ) -> Result<docbuf_core::deps::uuid::Uuid, Error> {
         let id = doc.uuid()?;
 
         // Return the vtable for the document.
@@ -115,10 +76,17 @@ impl DocBufDbMngr for DocBufDbManager {
         // Allocate a buffer for the document.
         let mut buffer = vtable.alloc_buf();
 
+        //
         let offsets = doc.to_docbuf(&mut buffer)?;
 
         // Write the document buffer to the database.
-        self.write_docbuf(partition_key, id, buffer, &vtable, offsets)?;
+        self.write_docbuf(
+            id.as_bytes(),
+            buffer,
+            &vtable.id(),
+            partition_key.deref(),
+            offsets.to_vec(),
+        )?;
 
         // if not, return an error.
         // if !self.vtables.contains(vid.as_slice()) {
@@ -143,7 +111,7 @@ impl DocBufDbMngr for DocBufDbManager {
     }
 
     /// Get a document from the database.
-    fn get<D: DocBuf>(&self, _id: docbuf_core::uuid::Uuid) -> Result<D, Error> {
+    fn get<D: DocBuf>(&self, _id: docbuf_core::deps::uuid::Uuid) -> Result<D, Error> {
         unimplemented!("DocBufDbMngr method not implemented");
     }
 

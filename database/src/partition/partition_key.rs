@@ -1,4 +1,8 @@
-use docbuf_core::uuid::Uuid;
+use std::ops::Deref;
+
+use crate::Error;
+
+use docbuf_core::deps::{hex, uuid::Uuid};
 use xxhash_rust::const_xxh3::xxh3_128;
 
 /// Default number of partitions, if none are provided to the partition key's bucket method.
@@ -14,6 +18,20 @@ impl From<Uuid> for PartitionKey {
     }
 }
 
+impl From<&[u8; 16]> for PartitionKey {
+    fn from(value: &[u8; 16]) -> Self {
+        Self(*value)
+    }
+}
+
+impl Deref for PartitionKey {
+    type Target = [u8; 16];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl Into<u128> for &PartitionKey {
     fn into(self) -> u128 {
         u128::from_le_bytes(self.0)
@@ -21,6 +39,18 @@ impl Into<u128> for &PartitionKey {
 }
 
 impl PartitionKey {
+    pub fn as_hex(&self) -> String {
+        hex::encode(self.0)
+    }
+
+    pub fn from_hex(value: &str) -> Result<PartitionKey, Error> {
+        let bytes = hex::decode(value)?;
+        if bytes.len() != 16 {
+            return Err(Error::InvalidPartitionKey(value.to_string()));
+        }
+        Ok(PartitionKey::from(bytes.as_slice()))
+    }
+
     pub fn as_bytes(&self) -> &[u8; 16] {
         &self.0
     }

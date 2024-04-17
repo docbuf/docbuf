@@ -15,7 +15,7 @@ pub trait DocBufDbMngr {
         &self,
         doc: &D,
         partition_key: PartitionKey,
-    ) -> Result<docbuf_core::uuid::Uuid, Error>;
+    ) -> Result<docbuf_core::deps::uuid::Uuid, Error>;
 
     /// Return all documents in the database.
     fn all<D: DocBuf>(&self, doc: &D) -> Result<Vec<D>, Error>;
@@ -24,7 +24,7 @@ pub trait DocBufDbMngr {
     fn find<D: DocBuf>(&self, doc: &D, predicate: Self::Predicate) -> Result<Vec<D>, Error>;
 
     /// Get a document from the database.
-    fn get<D: DocBuf>(&self, id: docbuf_core::uuid::Uuid) -> Result<D, Error>;
+    fn get<D: DocBuf>(&self, id: docbuf_core::deps::uuid::Uuid) -> Result<D, Error>;
 
     /// Update a document in the database.
     fn update<D: DocBuf>(&self, doc: &D) -> Result<(), Error>;
@@ -51,45 +51,55 @@ pub trait DocBufDb: DocBuf {
     /// The predicate type used for querying the database.
     type Predicate;
 
-    /// Return a database client.
-    fn db() -> Result<Self::Db, Error>;
+    // /// Return a database client.
+    // fn db() -> Result<Self::Db, Error>;
 
     /// Write a document into the database.
     /// This will return the document id.
-    fn db_insert(&self) -> Result<docbuf_core::uuid::Uuid, Error>;
+    fn db_insert(&self, db: &Self::Db) -> Result<docbuf_core::deps::uuid::Uuid, Error>;
 
     /// Return all documents in the database.
-    fn db_all() -> Result<Vec<Self::Doc>, Error>;
+    fn db_all(db: &Self::Db) -> Result<Vec<Self::Doc>, Error>;
 
     /// Read documents in the database given a predicate.
-    fn db_find(predicate: Self::Predicate) -> Result<Vec<Self::Doc>, Error>;
+    fn db_find(db: &Self::Db, predicate: Self::Predicate) -> Result<Vec<Self::Doc>, Error>;
 
     /// Get a document from the database.
     fn db_get(
-        id: docbuf_core::uuid::Uuid,
+        db: &Self::Db,
+        id: docbuf_core::deps::uuid::Uuid,
         partition_key: Option<impl Into<PartitionKey>>,
     ) -> Result<Self::Doc, Error>;
 
     /// Get all documents in a partition from the database.
-    fn db_get_partition(partition_key: impl Into<PartitionKey>) -> Result<Vec<Self::Doc>, Error>;
+    fn db_get_partition(
+        db: &Self::Db,
+        partition_key: impl Into<PartitionKey>,
+    ) -> Result<Vec<Self::Doc>, Error>;
 
     /// Update a document in the database.
-    fn db_update(&self) -> Result<(), Error>;
+    fn db_update(&self, db: &Self::Db) -> Result<(), Error>;
 
     /// Delete a document from the database.
-    fn db_delete(self) -> Result<Self::Doc, Error>;
+    fn db_delete(self, db: &Self::Db) -> Result<Self::Doc, Error>;
 
     /// Delete a document partition from the database.
-    fn db_delete_partition(partition_key: impl Into<PartitionKey>) -> Result<(), Error>;
+    fn db_delete_partition(
+        db: &Self::Db,
+        partition_key: impl Into<PartitionKey>,
+    ) -> Result<(), Error>;
 
     /// Return the number of documents in the database.
-    fn db_count() -> Result<usize, Error>;
+    fn db_count(db: &Self::Db) -> Result<usize, Error>;
 
     /// Return the number of documents in the database given a predicate.
-    fn db_count_where(predicate: Self::Predicate) -> Result<usize, Error>;
+    fn db_count_where(db: &Self::Db, predicate: Self::Predicate) -> Result<usize, Error>;
 
     /// Return the number of documents in the database given a partition key.
-    fn db_count_partition(partition_key: impl Into<PartitionKey>) -> Result<usize, Error>;
+    fn db_count_partition(
+        db: &Self::Db,
+        partition_key: impl Into<PartitionKey>,
+    ) -> Result<usize, Error>;
 
     /// Return the database partition key for the document.
     /// This is used by the database to partition the document
