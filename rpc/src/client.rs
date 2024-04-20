@@ -15,7 +15,7 @@ const DEFAULT_SOCKET: Token = Token(0);
 
 pub struct RpcClient<Conn, Config: Clone> {
     socket: UdpSocket,
-    poll: Poll,
+    queue: Poll,
     events: Events,
     http3_cx: Option<Conn>,
     config: QuicConfig<Config>,
@@ -33,11 +33,12 @@ impl RpcClient<quiche::h3::Connection, quiche::Config> {
 
         let mut socket = UdpSocket::bind(local_addr)?;
 
-        let poll = Poll::new()?;
+        let queue = Poll::new()?;
         let events = Events::with_capacity(1024);
 
         // Register the default socket token.
-        poll.registry()
+        queue
+            .registry()
             .register(&mut socket, DEFAULT_SOCKET, mio::Interest::READABLE)?;
 
         let config = config
@@ -46,7 +47,7 @@ impl RpcClient<quiche::h3::Connection, quiche::Config> {
 
         Ok(Self {
             socket,
-            poll,
+            queue,
             events,
             http3_cx: None,
             config,
@@ -118,7 +119,7 @@ impl RpcClient<quiche::h3::Connection, quiche::Config> {
         debug!("Entering Main Loop");
 
         loop {
-            self.poll.poll(&mut self.events, connection.timeout())?;
+            self.queue.poll(&mut self.events, connection.timeout())?;
 
             // Check for incoming packets
             'incoming: loop {
@@ -191,7 +192,7 @@ impl RpcClient<quiche::h3::Connection, quiche::Config> {
                     info!("Sending test request");
 
                     let headers = vec![
-                        quiche::h3::Header::new(b":method", b"GET"),
+                        quiche::h3::Header::new(b":method", b"POST"),
                         quiche::h3::Header::new(b":scheme", b"http"),
                         quiche::h3::Header::new(b":authority", b"localhost"),
                         quiche::h3::Header::new(b":path", b"/"),

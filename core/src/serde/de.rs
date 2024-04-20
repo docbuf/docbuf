@@ -81,6 +81,7 @@ impl<'de> DocBufDeserializer<'de> {
                 } else if self.current_item_index == 0
                     && self.current_field_index == s.num_fields - 1
                     && !self.has_descended
+                    && self.current_item_index < num_items - 1
                 {
                     self.has_descended = true;
                     self.current_item_index += 1;

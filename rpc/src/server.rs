@@ -1,10 +1,9 @@
 use crate::error::Error;
 // use crate::http3::Http3Config;
 use crate::quic::{QuicConfig, TlsOptions, TransportErrorCode, MAX_QUIC_DATAGRAM_SIZE};
+use crate::{connections::*, RpcRequest, RpcResponse};
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Mutex;
 use std::time::Duration;
 
 use mio::net::UdpSocket;
@@ -29,440 +28,10 @@ const DEFAULT_POLL_WINDOW: Duration = Duration::from_millis(50);
 
 pub type StreamId = u64;
 
-pub struct RpcAuthToken<Id> {
-    id: Id,
-    addr: SocketAddr,
-}
-
-impl RpcAuthToken<quiche::ConnectionId<'static>> {
-    pub fn new(id: quiche::ConnectionId<'static>, addr: SocketAddr) -> Self {
-        Self { id, addr }
-    }
-
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.id.to_vec()
-    }
-
-    pub fn from_vec(id: Vec<u8>, addr: SocketAddr) -> Self {
-        Self {
-            id: quiche::ConnectionId::from_vec(id),
-            addr,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RpcRequest<Header: Clone + std::fmt::Debug> {
-    stream_id: StreamId,
-    headers: Vec<Header>,
-    body: Option<Vec<u8>>,
-}
-
-impl<Header> RpcRequest<Header>
-where
-    Header: Clone + std::fmt::Debug,
-{
-    pub fn with_body(stream_id: StreamId, headers: Vec<Header>, body: Vec<u8>) -> Self {
-        Self {
-            stream_id,
-            headers,
-            body: Some(body),
-        }
-    }
-
-    pub fn without_body(stream_id: StreamId, headers: Vec<Header>) -> Self {
-        Self {
-            stream_id,
-            headers,
-            body: None,
-        }
-    }
-}
-
-pub struct RpcResponse<Header> {
-    stream_id: StreamId,
-    headers: Vec<Header>,
-    body: Vec<u8>,
-}
-
-impl<Header> RpcResponse<Header> {
-    pub fn new(stream_id: StreamId, headers: Vec<Header>, body: Vec<u8>) -> Self {
-        Self {
-            stream_id,
-            headers,
-            body,
-        }
-    }
-
-    // If the response is partially written, return a partial response, setting the bytes_written.
-    pub fn consumed_partial(self, bytes_written: usize) -> RpcPartialResponse<Header> {
-        RpcPartialResponse {
-            stream_id: self.stream_id,
-            headers: None,
-            body: self.body,
-            written: bytes_written,
-        }
-    }
-}
-
-pub struct RpcPartialResponse<Header> {
-    stream_id: StreamId,
-    headers: Option<Vec<Header>>,
-    body: Vec<u8>,
-    written: usize,
-}
-
-impl<Header> Into<RpcPartialResponse<Header>> for RpcResponse<Header> {
-    fn into(self) -> RpcPartialResponse<Header> {
-        RpcPartialResponse {
-            stream_id: self.stream_id,
-            headers: Some(self.headers),
-            body: self.body,
-            written: 0,
-        }
-    }
-}
-
-impl<Header> RpcPartialResponse<Header> {
-    pub fn new(stream_id: StreamId) -> Self {
-        Self {
-            stream_id,
-            headers: None,
-            body: Vec::new(),
-            written: 0,
-        }
-    }
-}
-
-pub struct RpcPartialResponses<T>(HashMap<StreamId, RpcPartialResponse<T>>);
-
-impl<T> RpcPartialResponses<T> {
-    pub fn new() -> Self {
-        Self(HashMap::new())
-    }
-
-    pub fn insert(&mut self, partial: RpcPartialResponse<T>) {
-        self.0.insert(partial.stream_id, partial);
-    }
-
-    pub fn remove(&mut self, stream_id: StreamId) -> Option<RpcPartialResponse<T>> {
-        self.0.remove(&stream_id)
-    }
-}
-
-pub struct RpcConnection<Conn, Http3Conn, Header> {
-    inner: Conn,
-    http3: Option<Http3Conn>,
-    partial_responses: RpcPartialResponses<Header>,
-}
-
-impl From<quiche::Connection>
-    for RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Header>
-{
-    fn from(inner: quiche::Connection) -> Self {
-        Self::new(inner)
-    }
-}
-
-impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Header> {
-    pub fn new(inner: quiche::Connection) -> Self {
-        Self {
-            inner,
-            http3: None,
-            partial_responses: RpcPartialResponses::new(),
-        }
-    }
-
-    /// Check if the HTTP/3 connection is established.
-    pub fn is_http3_established(&self) -> bool {
-        self.http3.is_some() && (self.inner.is_in_early_data() || self.inner.is_established())
-    }
-
-    /// Set the HTTP/3 Connection.
-    pub fn set_http3(&mut self, http3: quiche::h3::Connection) {
-        self.http3 = Some(http3);
-    }
-
-    /// Get the HTTP/3 Connection.
-    pub fn http3(&mut self) -> Option<&mut quiche::h3::Connection> {
-        self.http3.as_mut()
-    }
-
-    /// Send an HTTP/3 Response.
-    pub fn handle_response(
-        &mut self,
-        response: RpcResponse<quiche::h3::Header>,
-    ) -> Result<(), Error> {
-        let http3_cx = self.http3.as_mut().ok_or(Error::Http3ConnectionNotFound)?;
-
-        // Send response headers
-        match http3_cx.send_response(
-            &mut self.inner,
-            response.stream_id,
-            &response.headers,
-            false,
-        ) {
-            Ok(()) => {}
-
-            Err(quiche::h3::Error::StreamBlocked) => {
-                self.partial_responses.insert(response.into());
-                return Ok(());
-            }
-
-            Err(e) => {
-                error!(
-                    "{} http3 response send failed {:?}",
-                    self.inner.trace_id(),
-                    e
-                );
-            }
-        }
-
-        // Send response body
-        let bytes_written =
-            match http3_cx.send_body(&mut self.inner, response.stream_id, &response.body, true) {
-                Ok(written) => written,
-
-                Err(quiche::h3::Error::Done) => 0,
-
-                Err(e) => {
-                    error!(
-                        "{} http3 response send failed {:?}",
-                        self.inner.trace_id(),
-                        e
-                    );
-                    return Ok(());
-                }
-            };
-
-        // If the bytes written are less than the body,
-        // store the partial response, that will be retried.
-        if bytes_written < response.body.len() {
-            self.partial_responses
-                .insert(response.consumed_partial(bytes_written));
-        }
-
-        Ok(())
-    }
-
-    /// Handle HTTP/3 Connection Writes.
-    pub fn write_http3_responses(&mut self) -> Result<(), Error> {
-        self.inner.writable().for_each(|id| {
-            if let Err(e) = self.write_http3_response(id) {
-                error!("Failed to write HTTP/3 response: {:?}", e);
-            }
-        });
-
-        Ok(())
-    }
-
-    /// Handle HTTP/3 Connection Responses.
-    pub fn write_http3_response(&mut self, stream_id: u64) -> Result<(), Error> {
-        if let Some(response) = self.partial_responses.0.get_mut(&stream_id) {
-            let http3_cx = self.http3.as_mut().ok_or(Error::Http3ConnectionNotFound)?;
-
-            if let Some(headers) = &mut response.headers {
-                // Process Headers
-                match http3_cx.send_response(&mut self.inner, stream_id, &headers, false) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!(
-                            "Failed to write http3 response to stream {stream_id}: {:?}",
-                            e
-                        );
-                        return Ok(());
-                    }
-                }
-            }
-
-            // Set headers to None to avoid duplication.
-            response.headers = None;
-
-            let body = &response.body[response.written..];
-
-            match http3_cx.send_body(&mut self.inner, stream_id, body, true) {
-                Ok(written) => {
-                    response.written += written;
-                }
-                // If a Done error is received, no more data can be written.
-                Err(quiche::h3::Error::Done) => {}
-                Err(e) => {
-                    error!(
-                        "Failed to write http3 response body to stream {stream_id}: {:?}",
-                        e
-                    );
-                    self.partial_responses.remove(stream_id);
-                    return Ok(());
-                }
-            };
-
-            // Remove the partial response if all the data has been written.
-            if response.written == response.body.len() {
-                self.partial_responses.remove(stream_id);
-            }
-        };
-
-        Ok(())
-    }
-
-    /// Handle HTTP/3 Connection Requests.
-    pub fn read_http3_requests(&mut self) -> Result<(), Error> {
-        // Keep track of the current request when parsing the body following the headers.
-        let mut current_request = None;
-
-        loop {
-            let http3_cx = self.http3.as_mut().ok_or(Error::Http3ConnectionNotFound)?;
-
-            match http3_cx.poll(&mut self.inner) {
-                Ok((stream_id, quiche::h3::Event::Headers { list, has_body })) => {
-                    if has_body {
-                        // Event::Data should follow this event.
-                        // Store the request headers in the current_request.
-                        current_request = Some(RpcRequest::without_body(stream_id, list));
-                    } else {
-                        // If there is no body with this request, handle the request without a body.
-                        self.handle_request(RpcRequest::without_body(stream_id, list))?;
-                    }
-                }
-
-                Ok((stream_id, quiche::h3::Event::Data)) => {
-                    info!(
-                        "{} received data from stream id {}",
-                        self.inner.trace_id(),
-                        stream_id
-                    );
-
-                    // Get the current request and its body.
-                    let request = current_request.as_mut().ok_or(Error::Http3RequestError)?;
-                    // Write data to the request body.
-                    let mut body = request.body.as_mut().ok_or(Error::Http3RequestError)?;
-
-                    // NOTE: `recv_body` will return `Error::Done` when the body is fully read.
-                    match http3_cx.recv_body(&mut self.inner, stream_id, &mut body) {
-                        Ok(received) => {
-                            info!("Received {} bytes", received);
-                        }
-                        Err(quiche::h3::Error::Done) => {
-                            info!("Finished reading body from stream {stream_id}");
-                            self.handle_request(request.clone())?;
-                            current_request = None;
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to read http3 request body from stream {stream_id}: {:?}",
-                                e
-                            );
-                            current_request = None;
-                        }
-                    }
-                }
-                // Stream closed.
-                Ok((_stream_id, quiche::h3::Event::Finished)) => (),
-                // Stream reset.
-                Ok((_stream_id, quiche::h3::Event::Reset { .. })) => (),
-                Ok((_prioritized_element_id, quiche::h3::Event::PriorityUpdate)) => (),
-                Ok((_goaway_id, quiche::h3::Event::GoAway)) => (),
-                // No remaining work on the connection.
-                Err(quiche::h3::Error::Done) => {
-                    break;
-                }
-                Err(e) => {
-                    error!("{} HTTP/3 error {:?}", self.inner.trace_id(), e);
-
-                    break;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Suspends the inner stream while the http3 stream is being processed.
-    fn suspend_stream(&mut self, stream_id: u64) -> Result<(), Error> {
-        self.inner
-            .stream_shutdown(stream_id, quiche::Shutdown::Read, 0)?;
-
-        Ok(())
-    }
-
-    pub fn handle_request(&mut self, request: RpcRequest<quiche::h3::Header>) -> Result<(), Error> {
-        // Suspend the inner stream while the http3 stream is being processed.
-        // This is to avoid the inner stream being polled while the http3 stream is being processed.
-        self.suspend_stream(request.stream_id)?;
-
-        // Process the inner requests, e.g. RPC requests.
-        let response = self.handle_inner_request(request)?;
-
-        // Send response to the http3 stream.
-        self.handle_response(response)?;
-
-        Ok(())
-    }
-
-    /// Handle the inner RPC request.
-    /// The route is determined by the request headers.
-    pub fn handle_inner_request(
-        &mut self,
-        request: RpcRequest<quiche::h3::Header>,
-    ) -> Result<RpcResponse<quiche::h3::Header>, Error> {
-        info!("Received Request: {:?}", request);
-
-        error!("RpcServer::handle_inner_request not implemented");
-        unimplemented!("RpcServer::handle_inner_request not implemented")
-    }
-}
-
-pub type RpcConnectionsLock<'a> = std::sync::MutexGuard<
-    'a,
-    std::collections::HashMap<
-        quiche::ConnectionId<'static>,
-        RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Header>,
-    >,
->;
-
-// pub type RpcConnectionsLockError<'a> = std::sync::PoisonError<
-//     std::sync::MutexGuard<
-//         'a,
-//         std::collections::HashMap<
-//             quiche::ConnectionId<'static>,
-//             RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Header>,
-//         >,
-//     >,
-// >;
-
-pub struct RpcConnections<Id, Conn, Http3Conn, Header>(
-    Mutex<HashMap<Id, RpcConnection<Conn, Http3Conn, Header>>>,
-);
-
-impl
-    RpcConnections<
-        quiche::ConnectionId<'static>,
-        quiche::Connection,
-        quiche::h3::Connection,
-        quiche::h3::Header,
-    >
-{
-    pub fn new() -> Self {
-        Self(Mutex::new(HashMap::new()))
-    }
-
-    pub fn lock(&self) -> Result<RpcConnectionsLock, Error> {
-        self.0.lock().map_err(|e| Error::ConnectionsLockPoisioned)
-    }
-
-    pub fn timeout(&self) -> Result<(), Error> {
-        if let Ok(mut lock) = self.lock() {
-            lock.iter_mut().for_each(|(_, c)| c.inner.on_timeout());
-        }
-
-        Ok(())
-    }
-}
-
 /// RPC Server.
 pub struct RpcServer<Id, Conn, QConfig: Clone, Http3Conn, Header> {
     socket: UdpSocket,
-    poll: Poll,
+    queue: Poll,
     events: Events,
     quic_config: QuicConfig<QConfig>,
     connections: RpcConnections<Id, Conn, Http3Conn, Header>,
@@ -490,8 +59,9 @@ impl
         let mut socket = UdpSocket::bind(socket_address)?;
 
         // Register the socket with the poll.
-        let poll = Poll::new()?;
-        poll.registry()
+        let queue = Poll::new()?;
+        queue
+            .registry()
             .register(&mut socket, DEFAULT_SOCKET, Interest::READABLE)?;
 
         let events = Events::with_capacity(DEFAULT_EVENTS_CAPACITY);
@@ -504,7 +74,7 @@ impl
 
         Ok(Self {
             socket,
-            poll,
+            queue,
             events,
             connections,
             hmac_key,
@@ -522,8 +92,32 @@ impl
         let mut input_buffer = Vec::from([0; MAX_UDP_PAYLOAD_SIZE]);
         let mut output_buffer = Vec::from([0; MAX_QUIC_DATAGRAM_SIZE]);
 
+        // Create a channel for sending and receiving requests.
+        let (req_tx, req_rx) = RpcRequest::channel();
+
+        // Process Requests on a separate thread.
+        // Join to main thread prior to returning.
+        let request_processor = std::thread::spawn(move || {
+            // Wait for incoming requests.
+            while let Ok((request, res_tx)) = req_rx.recv() {
+                info!("Processing Request: {:?}", request);
+
+                todo!("Add the Request Processor Here");
+
+                // Send the response back to the client.
+                res_tx.send(RpcResponse {
+                    stream_id: request.stream_id,
+                    headers: request.headers,
+                    body: Vec::new(),
+                })?;
+            }
+
+            Ok::<_, Error>(())
+        });
+
+        // Enter main event loop.
         loop {
-            self.poll
+            self.queue
                 .poll(&mut self.events, Some(DEFAULT_POLL_WINDOW))?;
 
             'incoming: loop {
@@ -552,6 +146,14 @@ impl
 
                                 break 'incoming;
                             }
+
+                            // Wait for request processor to finish.
+                            request_processor.join().map_err(|e| {
+                                error!("Failed to join request processor");
+                                Error::ThreadJoinError(e)
+                            })??;
+
+                            error!("Failed to receive incoming packet from UDP socket: {}", e);
 
                             return Err(Error::Io(e));
                         }
@@ -720,7 +322,7 @@ impl
                     connection.write_http3_responses()?;
 
                     // Read HTTP/3 requests.
-                    connection.read_http3_requests()?;
+                    connection.read_http3_requests(&req_tx)?;
                 }
             } // End of incoming loop.
 
@@ -744,7 +346,8 @@ impl
                         Err(e) => {
                             error!("{} send failed: {:?}", connection.inner.trace_id(), e);
 
-                            connection.inner.close(false, 0x1, b"fail").ok();
+                            connection.close(TransportErrorCode::InternalError)?;
+
                             break;
                         }
                     };
@@ -763,6 +366,14 @@ impl
                             connection.inner.trace_id(),
                             e
                         );
+
+                        // Wait to finish processing the requests.
+                        request_processor.join().map_err(|e| {
+                            error!("Failed to join request processor");
+                            Error::ThreadJoinError(e)
+                        })??;
+
+                        error!("Failed to send outgoing packet from UDP socket: {}", e);
 
                         return Err(Error::Io(e));
                     }

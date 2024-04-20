@@ -5,6 +5,7 @@ edition = "2021"
 description = "A Remote Procedure Call (RPC) library for DocBuf documents."
 
 [dependencies]
+docbuf-core = { path = "../core" }
 boring = "4.6.0"
 mio = { version = "0.8.11", features = ["net", "os-poll"] }
 quiche = { path = "../../quiche/quiche", features = ["boringssl-boring-crate"] }

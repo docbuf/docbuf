@@ -27,7 +27,15 @@ pub enum Error {
     #[error("HTTP/3 Request Error")]
     Http3RequestError,
     #[error(transparent)]
-    TransportError(#[from] crate::quic::TransportErrorCode),
+    TransportError(#[from] crate::TransportErrorCode),
     #[error("TLS Error: {0}")]
     TlsError(String),
+    #[error(transparent)]
+    RpcRequestSendError(#[from] crate::RpcRequestSendError),
+    #[error(transparent)]
+    RpcResponseSendError(#[from] crate::RpcResponseSendError),
+    #[error(transparent)]
+    RecvError(#[from] std::sync::mpsc::RecvError),
+    #[error("Thread Join Error")]
+    ThreadJoinError(Box<dyn std::any::Any + Send>),
 }
