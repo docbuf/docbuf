@@ -1,6 +1,6 @@
 <!-- Center Header with "DocBuf" text -->
 <div align="center">
-    <img src="guide/src/images/logo.svg" />
+    <img src="guide/src/images/logo.png" />
   <h1>DocBuf <small>(Document Buffers)</small></h1>
 </div>
 
@@ -8,7 +8,7 @@
 
 Document Buffers, **DocBuf**, is an _interface description language_ (IDL) for structured document schematization.
 
-DocBuf is motivated by creating a more modern and efficient version of `XSD`. There are many nice features `XSD` offers, such as providing validation requirements per element, known as _restrictions_. However, despite its fine-level controls, `XSD` implemented `XML` data is verbose and serialization and deserialization can be brittle if there is a syntax error or missing field. 
+DocBuf is motivated by creating a more modern and efficient version of `XSD`. There are many nice features `XSD` offers, such as providing validation requirements per element, known as _restrictions_. However, despite its fine-level controls, `XSD` implemented `XML` data is verbose and serialization and deserialization can be brittle if there is a syntax error or missing field.
 
 DocBuf takes the good parts of `XSD`, for example implementing its own version of field options (`field::options`) and compile-time validation, and extends its utility into a light-weight binary format that is efficiently serialized and deserialized into native programming language structured data, e.g., Rust.
 
@@ -156,6 +156,7 @@ process Messenger {
 ```
 
 <!-- Add Copyright Notice -->
+
 ## Copyright
 
 © 2024 [Emergent Financial, LLC](https://emergent.financial) - All Rights Reserved

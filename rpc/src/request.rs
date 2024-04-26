@@ -1,11 +1,11 @@
-use crate::{RpcResponse, RpcResponseSyncSender, StreamId};
+use crate::{RpcHeaders, RpcResponse, RpcResponseSyncSender, StreamId};
 
 use std::sync::mpsc::{channel, Receiver, SendError, Sender, SyncSender};
 
 #[derive(Debug, Clone)]
 pub struct RpcRequest<Header: Clone + std::fmt::Debug> {
     pub(crate) stream_id: StreamId,
-    pub(crate) headers: Vec<Header>,
+    pub(crate) headers: RpcHeaders<Header>,
     pub(crate) body: Option<Vec<u8>>,
 }
 
@@ -13,7 +13,7 @@ impl<Header> RpcRequest<Header>
 where
     Header: Clone + std::fmt::Debug,
 {
-    pub fn with_body(stream_id: StreamId, headers: Vec<Header>, body: Vec<u8>) -> Self {
+    pub fn with_body(stream_id: StreamId, headers: RpcHeaders<Header>, body: Vec<u8>) -> Self {
         Self {
             stream_id,
             headers,
@@ -21,7 +21,7 @@ where
         }
     }
 
-    pub fn without_body(stream_id: StreamId, headers: Vec<Header>) -> Self {
+    pub fn without_body(stream_id: StreamId, headers: RpcHeaders<Header>) -> Self {
         Self {
             stream_id,
             headers,

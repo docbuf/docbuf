@@ -1,16 +1,17 @@
-use crate::StreamId;
+use crate::{RpcHeaders, StreamId};
 
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender};
 
+#[derive(Debug, Clone)]
 pub struct RpcResponse<Header> {
     pub(crate) stream_id: StreamId,
-    pub(crate) headers: Vec<Header>,
+    pub(crate) headers: RpcHeaders<Header>,
     pub(crate) body: Vec<u8>,
 }
 
 impl<Header> RpcResponse<Header> {
-    pub fn new(stream_id: StreamId, headers: Vec<Header>, body: Vec<u8>) -> Self {
+    pub fn new(stream_id: StreamId, headers: RpcHeaders<Header>, body: Vec<u8>) -> Self {
         Self {
             stream_id,
             headers,
@@ -31,7 +32,7 @@ impl<Header> RpcResponse<Header> {
 
 pub struct RpcPartialResponse<Header> {
     pub(crate) stream_id: StreamId,
-    pub(crate) headers: Option<Vec<Header>>,
+    pub(crate) headers: Option<RpcHeaders<Header>>,
     pub(crate) body: Vec<u8>,
     pub(crate) written: usize,
 }

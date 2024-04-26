@@ -1,6 +1,7 @@
 use docbuf_derive::{derive, proc_macro2, quote::quote};
 
 use proc_macro::TokenStream;
+use proc_macro_error::{abort_call_site, emit_error, proc_macro_error};
 
 #[proc_macro_derive(DocBuf)]
 pub fn derive_docbuf(item: TokenStream) -> TokenStream {
@@ -29,4 +30,20 @@ pub fn docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = proc_macro2::TokenStream::from(item);
 
     derive::derive_docbuf(attr, item).into()
+}
+
+#[proc_macro_error]
+#[proc_macro_attribute]
+pub fn docbuf_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr = proc_macro2::TokenStream::from(attr);
+    let item = proc_macro2::TokenStream::from(item);
+
+    println!("Attr {attr}");
+    println!("Item {item}");
+
+    abort_call_site!("DocBuf RPC Not Implemented");
+
+    // unimplemented!("Not implemented");
+
+    // derive::derive_docbuf_rpc(attr, item).into()
 }

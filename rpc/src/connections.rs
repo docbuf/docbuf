@@ -1,5 +1,6 @@
 use crate::{
-    Error, RpcPartialResponses, RpcRequest, RpcRequestSender, RpcResponse, TransportErrorCode,
+    Error, RpcHeaders, RpcPartialResponses, RpcRequest, RpcRequestSender, RpcResponse,
+    TransportErrorCode,
 };
 
 use std::collections::HashMap;
@@ -175,13 +176,14 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Heade
 
             match http3_cx.poll(&mut self.inner) {
                 Ok((stream_id, quiche::h3::Event::Headers { list, has_body })) => {
+                    let headers = RpcHeaders::from(list);
                     if has_body {
                         // Event::Data should follow this event.
                         // Store the request headers in the current_request.
-                        current_request = Some(RpcRequest::without_body(stream_id, list));
+                        current_request = Some(RpcRequest::without_body(stream_id, headers));
                     } else {
                         // If there is no body with this request, handle the request without a body.
-                        self.handle_request(RpcRequest::without_body(stream_id, list), req_tx)?;
+                        self.handle_request(RpcRequest::without_body(stream_id, headers), req_tx)?;
                     }
                 }
 
@@ -277,18 +279,6 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Heade
             }
         }
     }
-
-    // /// Handle the inner RPC request.
-    // /// The route is determined by the request headers.
-    // pub fn handle_inner_request(
-    //     &mut self,
-    //     request: RpcRequest<quiche::h3::Header>,
-    // ) -> Result<RpcResponse<quiche::h3::Header>, Error> {
-    //     info!("Received Request: {:?}", request);
-
-    //     error!("RpcServer::handle_inner_request not implemented");
-    //     unimplemented!("RpcServer::handle_inner_request not implemented")
-    // }
 
     /// Close the connection
     pub fn close(&mut self, error: TransportErrorCode) -> Result<(), Error> {

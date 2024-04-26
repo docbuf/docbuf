@@ -1,9 +1,12 @@
 use crate::error::Error;
 // use crate::http3::Http3Config;
 use crate::quic::{QuicConfig, TlsOptions, TransportErrorCode, MAX_QUIC_DATAGRAM_SIZE};
-use crate::{connections::*, RpcRequest, RpcResponse};
+use crate::{
+    connections::*, RpcRequest, RpcResponse, RpcResult, RpcService, RpcServiceName, RpcServices,
+};
 
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use mio::net::UdpSocket;
@@ -29,27 +32,35 @@ const DEFAULT_POLL_WINDOW: Duration = Duration::from_millis(50);
 pub type StreamId = u64;
 
 /// RPC Server.
-pub struct RpcServer<Id, Conn, QConfig: Clone, Http3Conn, Header> {
+pub struct RpcServer<Id, Conn, QConfig: Clone, Http3Conn, Header, Ctx>
+where
+    Ctx: Clone + Send + Sync + 'static,
+{
     socket: UdpSocket,
     queue: Poll,
     events: Events,
     quic_config: QuicConfig<QConfig>,
     connections: RpcConnections<Id, Conn, Http3Conn, Header>,
     hmac_key: ring::hmac::Key,
+    context: Ctx,
 }
 
-impl
+impl<Ctx>
     RpcServer<
         quiche::ConnectionId<'static>,
         quiche::Connection,
         quiche::Config,
         quiche::h3::Connection,
         quiche::h3::Header,
+        Ctx,
     >
+where
+    Ctx: Clone + Send + Sync + 'static,
 {
     /// Bind to a socket address, listening on UDP.
     pub fn bind(
         socket_address: impl TryInto<SocketAddr>,
+        context: Ctx,
         quic_config: Option<QuicConfig<quiche::Config>>,
     ) -> Result<Self, Error> {
         let socket_address = socket_address
@@ -79,6 +90,7 @@ impl
             connections,
             hmac_key,
             quic_config,
+            context,
         })
     }
 
@@ -88,7 +100,7 @@ impl
     }
 
     /// Start the RPC server.
-    pub async fn start(&mut self) -> Result<(), Error> {
+    pub async fn start(&mut self, services: RpcServices<Ctx>) -> Result<(), Error> {
         let mut input_buffer = Vec::from([0; MAX_UDP_PAYLOAD_SIZE]);
         let mut output_buffer = Vec::from([0; MAX_QUIC_DATAGRAM_SIZE]);
 
@@ -97,19 +109,35 @@ impl
 
         // Process Requests on a separate thread.
         // Join to main thread prior to returning.
+        let ctx = self.context.clone();
+        // let services = Arc::new(Mutex::new(services));
+
         let request_processor = std::thread::spawn(move || {
             // Wait for incoming requests.
             while let Ok((request, res_tx)) = req_rx.recv() {
                 info!("Processing Request: {:?}", request);
 
-                todo!("Add the Request Processor Here");
+                // Get the service and method name from the request.
+                let service_name = request.headers.service()?;
+                let method_name = request.headers.method()?;
 
-                // Send the response back to the client.
-                res_tx.send(RpcResponse {
-                    stream_id: request.stream_id,
-                    headers: request.headers,
-                    body: Vec::new(),
-                })?;
+                // Find the service method given the request headers.
+                match services.get_method(service_name, method_name) {
+                    Some(method) => match method(ctx.clone(), request) {
+                        RpcResult::Future(val) => {}
+                        RpcResult::Iter(val) => {}
+                    },
+                    None => {
+                        warn!("Service {service_name} Method {method_name} not found");
+                        todo!("Send Error Response")
+                        // let response = RpcResponse::error(
+                        //     TransportErrorCode::HTTP3_MISSING_SETTINGS,
+                        //     "Method not found",
+                        // );
+
+                        // res_tx.send(response).unwrap();
+                    }
+                }
             }
 
             Ok::<_, Error>(())

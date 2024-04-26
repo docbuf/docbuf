@@ -4,6 +4,7 @@ use crate::{
     error::Error,
     quic::{QuicConfig, TlsOptions, TransportErrorCode, MAX_QUIC_DATAGRAM_SIZE},
     server::MAX_UDP_PAYLOAD_SIZE,
+    RpcHeader,
 };
 
 use mio::{net::UdpSocket, Events, Poll, Token};
@@ -192,12 +193,12 @@ impl RpcClient<quiche::h3::Connection, quiche::Config> {
                     info!("Sending test request");
 
                     let headers = vec![
-                        quiche::h3::Header::new(b":method", b"POST"),
-                        quiche::h3::Header::new(b":scheme", b"http"),
-                        quiche::h3::Header::new(b":authority", b"localhost"),
-                        quiche::h3::Header::new(b":path", b"/"),
-                        quiche::h3::Header::new(b"content-type", b"application/docbuf+rpc"),
-                        quiche::h3::Header::new(b"user-agent", b"docbuf-rpc"),
+                        RpcHeader::new(b":method", b"POST"),
+                        RpcHeader::new(b":scheme", b"http"),
+                        RpcHeader::new(b":authority", b"localhost"),
+                        RpcHeader::new(b":path", b"/complex/save_document"),
+                        RpcHeader::new(b"content-type", b"application/docbuf+rpc"),
+                        RpcHeader::new(b"user-agent", b"docbuf-rpc"),
                     ];
                     let bodyless = true;
                     http3_cx.send_request(&mut connection, &headers, bodyless)?;

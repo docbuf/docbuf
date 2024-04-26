@@ -1,3 +1,5 @@
+use std::sync::{MutexGuard, TryLockError};
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Invalid Socket Address")]
@@ -38,4 +40,12 @@ pub enum Error {
     RecvError(#[from] std::sync::mpsc::RecvError),
     #[error("Thread Join Error")]
     ThreadJoinError(Box<dyn std::any::Any + Send>),
+    #[error("Invalid Header Value")]
+    InvalidHeader,
+    #[error("Missing Header Value: {0}")]
+    MissingHeader(String),
+    #[error("Method Not Found: {0}, {1}")]
+    MethodNotFound(String, String),
+    #[error("Failed to lock RPC context")]
+    RpcContextLockError,
 }
