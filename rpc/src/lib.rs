@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod client;
 pub mod connections;
+pub mod context;
 pub mod error;
 pub mod header;
 pub mod http3;
@@ -15,6 +16,7 @@ pub mod traits;
 pub use auth::*;
 pub use client::*;
 pub use connections::*;
+pub use context::*;
 pub use error::*;
 pub use header::*;
 pub use http3::*;

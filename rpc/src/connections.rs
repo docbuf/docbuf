@@ -1,33 +1,33 @@
 use crate::{
-    Error, RpcHeaders, RpcPartialResponses, RpcRequest, RpcRequestSender, RpcResponse,
-    TransportErrorCode,
+    Error, PartialRpcRequests, PartialRpcResponses, RpcHeaders, RpcRequest, RpcRequestSender,
+    RpcResponse, TransportErrorCode,
 };
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
-pub struct RpcConnection<Conn, Http3Conn, Header> {
+pub struct RpcConnection<Conn, Http3Conn> {
     pub(crate) inner: Conn,
     pub(crate) http3: Option<Http3Conn>,
-    pub(crate) partial_responses: RpcPartialResponses<Header>,
+    pub(crate) partial_responses: PartialRpcResponses,
+    pub(crate) partial_requests: PartialRpcRequests,
 }
 
-impl From<quiche::Connection>
-    for RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Header>
-{
+impl From<quiche::Connection> for RpcConnection<quiche::Connection, quiche::h3::Connection> {
     fn from(inner: quiche::Connection) -> Self {
         Self::new(inner)
     }
 }
 
-impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Header> {
+impl RpcConnection<quiche::Connection, quiche::h3::Connection> {
     pub fn new(inner: quiche::Connection) -> Self {
         Self {
             inner,
             http3: None,
-            partial_responses: RpcPartialResponses::new(),
+            partial_responses: PartialRpcResponses::new(),
+            partial_requests: PartialRpcRequests::new(),
         }
     }
 
@@ -47,10 +47,7 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Heade
     }
 
     /// Send an HTTP/3 Response.
-    pub fn handle_response(
-        &mut self,
-        response: RpcResponse<quiche::h3::Header>,
-    ) -> Result<(), Error> {
+    pub fn handle_response(&mut self, response: RpcResponse) -> Result<(), Error> {
         let http3_cx = self.http3.as_mut().ok_or(Error::Http3ConnectionNotFound)?;
 
         // Send response headers
@@ -121,7 +118,7 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Heade
 
             if let Some(headers) = &mut response.headers {
                 // Process Headers
-                match http3_cx.send_response(&mut self.inner, stream_id, &headers, false) {
+                match http3_cx.send_response(&mut self.inner, stream_id, &headers.inner, false) {
                     Ok(_) => {}
                     Err(e) => {
                         error!(
@@ -149,14 +146,14 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Heade
                         "Failed to write http3 response body to stream {stream_id}: {:?}",
                         e
                     );
-                    self.partial_responses.remove(stream_id);
+                    self.partial_responses.remove(&stream_id);
                     return Ok(());
                 }
             };
 
             // Remove the partial response if all the data has been written.
             if response.written == response.body.len() {
-                self.partial_responses.remove(stream_id);
+                self.partial_responses.remove(&stream_id);
             }
         };
 
@@ -166,21 +163,23 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Heade
     /// Handle HTTP/3 Connection Requests.
     pub fn read_http3_requests(
         &mut self,
-        req_tx: &RpcRequestSender<quiche::h3::Header>,
+        req_tx: &RpcRequestSender,
+        input_buffer: &mut Vec<u8>,
     ) -> Result<(), Error> {
-        // Keep track of the current request when parsing the body following the headers.
-        let mut current_request = None;
-
         loop {
             let http3_cx = self.http3.as_mut().ok_or(Error::Http3ConnectionNotFound)?;
 
             match http3_cx.poll(&mut self.inner) {
                 Ok((stream_id, quiche::h3::Event::Headers { list, has_body })) => {
+                    info!("Received HTTP/3 Headers Event");
+
                     let headers = RpcHeaders::from(list);
+
                     if has_body {
                         // Event::Data should follow this event.
                         // Store the request headers in the current_request.
-                        current_request = Some(RpcRequest::without_body(stream_id, headers));
+                        self.partial_requests
+                            .insert(RpcRequest::without_body(stream_id, headers));
                     } else {
                         // If there is no body with this request, handle the request without a body.
                         self.handle_request(RpcRequest::without_body(stream_id, headers), req_tx)?;
@@ -194,39 +193,69 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Heade
                         stream_id
                     );
 
-                    // Get the current request and its body.
-                    let request = current_request.as_mut().ok_or(Error::Http3RequestError)?;
+                    let request = self.partial_requests.get_mut(&stream_id).ok_or_else(|| {
+                        error!("Received data for unknown stream id {}", stream_id);
+                        Error::UnknownStreamId(stream_id)
+                    })?;
 
-                    // Write data to the request body.
-                    let mut body = request.body.as_mut().ok_or(Error::Http3RequestError)?;
+                    // Poll recv_body until the body is fully read.
+                    let expected_body_size = request.headers.content_length().unwrap_or_default();
 
-                    // NOTE: `recv_body` will return `Error::Done` when the body is fully read.
-                    match http3_cx.recv_body(&mut self.inner, stream_id, &mut body) {
-                        Ok(received) => {
-                            info!("Received {} bytes", received);
+                    'recv_body: while expected_body_size > request.body_size() {
+                        info!("Current Body Size: {}", request.body_size());
+
+                        match http3_cx.recv_body(&mut self.inner, stream_id, input_buffer) {
+                            Ok(received) => {
+                                info!("Received {} bytes", received);
+                                match request.body.as_mut() {
+                                    None => {
+                                        request.body = Some(input_buffer[..received].to_vec());
+                                    }
+                                    Some(body) => {
+                                        body.extend_from_slice(&input_buffer[..received]);
+                                    }
+                                }
+                            }
+                            Err(quiche::h3::Error::Done) => {
+                                info!("Finished reading body from stream {stream_id}");
+
+                                debug!("Request: {request:?}");
+
+                                // self.handle_request(request.to_owned(), req_tx)?;
+                                // current_request = None;
+
+                                break 'recv_body;
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to read http3 request body from stream {stream_id}: {:?}",
+                                    e
+                                );
+                                break 'recv_body;
+                            }
                         }
-                        Err(quiche::h3::Error::Done) => {
-                            info!("Finished reading body from stream {stream_id}");
-                            self.handle_request(request.to_owned(), req_tx)?;
-                            current_request = None;
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to read http3 request body from stream {stream_id}: {:?}",
-                                e
-                            );
-                            current_request = None;
-                        }
+                    }
+
+                    debug!("Checking if request is complete...");
+                    if request.is_complete() {
+                        info!("Handling Complete Request: {}", self.inner.trace_id());
+                        let request =
+                            self.partial_requests.remove(&stream_id).ok_or_else(|| {
+                                error!("Received data for unknown stream id {}", stream_id);
+                                Error::UnknownStreamId(stream_id)
+                            })?;
+                        self.handle_request(request, req_tx)?;
                     }
                 }
                 // Stream closed.
-                Ok((_stream_id, quiche::h3::Event::Finished)) => (),
+                Ok((_stream_id, quiche::h3::Event::Finished)) => {}
                 // Stream reset.
                 Ok((_stream_id, quiche::h3::Event::Reset { .. })) => (),
                 Ok((_prioritized_element_id, quiche::h3::Event::PriorityUpdate)) => (),
                 Ok((_goaway_id, quiche::h3::Event::GoAway)) => (),
                 // No remaining work on the connection.
                 Err(quiche::h3::Error::Done) => {
+                    info!("{} HTTP/3 Done", self.inner.trace_id());
                     break;
                 }
                 Err(e) => {
@@ -250,8 +279,8 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Heade
 
     pub fn handle_request(
         &mut self,
-        request: RpcRequest<quiche::h3::Header>,
-        req_tx: &RpcRequestSender<quiche::h3::Header>,
+        request: RpcRequest,
+        req_tx: &RpcRequestSender,
     ) -> Result<(), Error> {
         // Suspend the inner stream while the http3 stream is being processed.
         // This is to avoid the inner stream being polled while the http3 stream is being processed.
@@ -294,7 +323,7 @@ pub type RpcConnectionsLock<'a> = std::sync::MutexGuard<
     'a,
     std::collections::HashMap<
         quiche::ConnectionId<'static>,
-        RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Header>,
+        RpcConnection<quiche::Connection, quiche::h3::Connection>,
     >,
 >;
 
@@ -303,23 +332,14 @@ pub type RpcConnectionsLock<'a> = std::sync::MutexGuard<
 //         'a,
 //         std::collections::HashMap<
 //             quiche::ConnectionId<'static>,
-//             RpcConnection<quiche::Connection, quiche::h3::Connection, quiche::h3::Header>,
+//             RpcConnection<quiche::Connection, quiche::h3::Connection>,
 //         >,
 //     >,
 // >;
 
-pub struct RpcConnections<Id, Conn, Http3Conn, Header>(
-    Mutex<HashMap<Id, RpcConnection<Conn, Http3Conn, Header>>>,
-);
+pub struct RpcConnections<Id, Conn, Http3Conn>(Mutex<HashMap<Id, RpcConnection<Conn, Http3Conn>>>);
 
-impl
-    RpcConnections<
-        quiche::ConnectionId<'static>,
-        quiche::Connection,
-        quiche::h3::Connection,
-        quiche::h3::Header,
-    >
-{
+impl RpcConnections<quiche::ConnectionId<'static>, quiche::Connection, quiche::h3::Connection> {
     pub fn new() -> Self {
         Self(Mutex::new(HashMap::new()))
     }
@@ -335,4 +355,18 @@ impl
 
         Ok(())
     }
+}
+
+// Utility method for closing a connection with a transport error code.
+pub fn close_connection(
+    connection: &mut quiche::Connection,
+    error_code: TransportErrorCode,
+) -> Result<(), Error> {
+    warn!("Closing connection with error code: {:?}", error_code);
+
+    let (inform_peer, code, reason) = error_code.into_parts();
+
+    connection.close(inform_peer, code, reason.as_bytes())?;
+
+    Ok(())
 }

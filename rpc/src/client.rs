@@ -1,58 +1,50 @@
-use std::net::SocketAddr;
-
 use crate::{
+    close_connection,
     error::Error,
     quic::{QuicConfig, TlsOptions, TransportErrorCode, MAX_QUIC_DATAGRAM_SIZE},
     server::MAX_UDP_PAYLOAD_SIZE,
-    RpcHeader,
+    PartialRpcResponse, PartialRpcResponses, RpcHeader, RpcRequest, RpcRequestReceiver,
+    RpcRequestSender, RpcResponse,
+};
+
+use std::{net::SocketAddr, thread::JoinHandle, time::Duration};
+use std::{
+    ops::Deref,
+    sync::mpsc::{Receiver, Sender},
 };
 
 use mio::{net::UdpSocket, Events, Poll, Token};
+use quiche::SendInfo;
 use ring::rand::*;
 use tracing::{debug, error, info, warn};
 
 /// Default socket token.
 const DEFAULT_SOCKET: Token = Token(0);
 
-pub struct RpcClient<Conn, Config: Clone> {
-    socket: UdpSocket,
-    queue: Poll,
-    events: Events,
-    http3_cx: Option<Conn>,
-    config: QuicConfig<Config>,
+// pub struct RpcClientConnection {
+//     tx_handle:
+//     /// The handle to the inner spawned connection;
+// inner: JoinHandle<()>,
+// }
+
+pub struct RpcClient {
+    sender: RpcRequestSender,
+    daemon: JoinHandle<Result<(), Error>>,
 }
 
-impl RpcClient<quiche::h3::Connection, quiche::Config> {
-    pub fn new(
-        local_addr: Option<impl Into<SocketAddr>>,
-        config: Option<QuicConfig<quiche::Config>>,
-    ) -> Result<Self, Error> {
-        let local_addr = local_addr
-            .map(|addr| Ok::<SocketAddr, Error>(addr.into()))
-            // Otherwise use a random ipv6 local port.
-            .unwrap_or_else(|| Ok("[::]:0".parse()?))?;
+impl RpcClient {
+    pub async fn send(&self, request: RpcRequest) -> Result<RpcResponse, Error> {
+        let (req_tx, req_rx) = RpcResponse::oneshot();
 
-        let mut socket = UdpSocket::bind(local_addr)?;
+        info!("Sending request: {request:?}");
+        self.sender.send((request, req_tx))?;
 
-        let queue = Poll::new()?;
-        let events = Events::with_capacity(1024);
+        while let Ok(response) = req_rx.try_recv() {
+            info!("Received response");
+            return Ok(response);
+        }
 
-        // Register the default socket token.
-        queue
-            .registry()
-            .register(&mut socket, DEFAULT_SOCKET, mio::Interest::READABLE)?;
-
-        let config = config
-            .map(|c| Ok(c))
-            .unwrap_or_else(|| QuicConfig::development(TlsOptions::None))?;
-
-        Ok(Self {
-            socket,
-            queue,
-            events,
-            http3_cx: None,
-            config,
-        })
+        Err(Error::InternalError)
     }
 
     fn new_connection_id<'a>(
@@ -68,12 +60,26 @@ impl RpcClient<quiche::h3::Connection, quiche::Config> {
     }
 
     /// Starts a connection to a remote server.
-    pub async fn connect(
-        &mut self,
+    pub fn connect(
         peer_addr: impl Into<SocketAddr>,
         server_name: Option<&str>,
-    ) -> Result<(), Error> {
-        let mut send_test_request = true;
+        config: Option<QuicConfig<quiche::Config>>,
+    ) -> Result<Self, Error> {
+        let mut socket = UdpSocket::bind("[::]:0".parse()?)?;
+
+        let mut queue = Poll::new()?;
+        let mut events = Events::with_capacity(1024);
+
+        // Register the default socket token.
+        queue
+            .registry()
+            .register(&mut socket, DEFAULT_SOCKET, mio::Interest::READABLE)?;
+
+        let mut config = config
+            .map(|c| Ok(c))
+            .unwrap_or_else(|| QuicConfig::development(TlsOptions::None))?;
+
+        // let mut send_test_request = true;
 
         let mut input_buffer = Vec::from([0; MAX_UDP_PAYLOAD_SIZE]);
         let mut output_buffer = Vec::from([0; MAX_QUIC_DATAGRAM_SIZE]);
@@ -81,7 +87,7 @@ impl RpcClient<quiche::h3::Connection, quiche::Config> {
         let mut id = [0; quiche::MAX_CONN_ID_LEN];
         let connection_id = Self::new_connection_id(&mut id)?;
 
-        let local_addr = self.socket.local_addr()?;
+        let local_addr = socket.local_addr()?;
         let peer_addr = peer_addr.into();
 
         info!("Connecting to {:?} from {:?}", peer_addr, local_addr);
@@ -92,22 +98,20 @@ impl RpcClient<quiche::h3::Connection, quiche::Config> {
             &connection_id,
             local_addr,
             peer_addr,
-            &mut self.config.0,
+            &mut config.0,
         )?;
 
         info!("Connection established");
 
+        let mut http3_cx = None;
         let http3_config = quiche::h3::Config::new()?;
 
         // Complete the connection handshake.
-        let (bytes_written, remote_socket_address) = connection.send(&mut output_buffer)?;
+        let (bytes_written, SendInfo { to, .. }) = connection.send(&mut output_buffer)?;
 
         debug!("Preparing to send {} bytes", bytes_written);
 
-        while let Err(e) = self
-            .socket
-            .send_to(&output_buffer[..bytes_written], remote_socket_address.to)
-        {
+        while let Err(e) = socket.send_to(&output_buffer[..bytes_written], to) {
             // Re-try if the request would block.
             if e.kind() == std::io::ErrorKind::WouldBlock {
                 debug!("Sending would block");
@@ -117,206 +121,297 @@ impl RpcClient<quiche::h3::Connection, quiche::Config> {
             return Err(Error::Io(e));
         }
 
-        debug!("Entering Main Loop");
+        let (req_tx, req_rx) = RpcRequest::channel();
 
-        loop {
-            self.queue.poll(&mut self.events, connection.timeout())?;
+        // Keep track of partial responses.
+        let mut partial_responses = PartialRpcResponses::new();
+        let mut sync_senders = RpcResponse::sync_senders();
 
-            // Check for incoming packets
-            'incoming: loop {
-                // Break if no events are found.
-                if self.events.is_empty() {
-                    connection.timeout();
+        let daemon = std::thread::spawn(move || {
+            loop {
+                debug!("Entering Main Loop");
+                queue.poll(&mut events, connection.timeout())?;
 
-                    break 'incoming;
+                // Check for incoming packets
+                'incoming: loop {
+                    // Break if no events are found.
+                    if events.is_empty() {
+                        connection.timeout();
+
+                        break 'incoming;
+                    }
+
+                    debug!("Found Event");
+
+                    let (bytes_received, remote_socket_addr) =
+                        match socket.recv_from(&mut input_buffer) {
+                            Ok(received) => received,
+                            Err(e) => {
+                                if e.kind() == std::io::ErrorKind::WouldBlock {
+                                    debug!("Receiving incoming UDP packets would block");
+                                    break 'incoming;
+                                }
+
+                                return Err(Error::Io(e));
+                            }
+                        };
+
+                    info!(
+                        "Received {} bytes from {:?}",
+                        bytes_received, remote_socket_addr
+                    );
+
+                    match connection.recv(
+                        &mut input_buffer[..bytes_received],
+                        quiche::RecvInfo {
+                            to: socket.local_addr()?,
+                            from: remote_socket_addr,
+                        },
+                    ) {
+                        Ok(bytes_read) => {
+                            // Received QUIC packet
+                            debug!("Received {bytes_read} bytes from remote socket");
+                        }
+                        Err(e) => {
+                            error!("Recieved Error When Reading from Remote Socket: {:?}", e);
+                            continue 'incoming;
+                        }
+                    };
+                } // end of 'incoming loop
+
+                if connection.is_closed() {
+                    debug!("Connection closed");
+                    break;
                 }
 
-                debug!("Found Event");
+                // Handle http3 connection
+                if http3_cx.is_none() && connection.is_established() {
+                    debug!("Establishing HTTP/3 connection");
+                    http3_cx = Some(quiche::h3::Connection::with_transport(
+                        &mut connection,
+                        &http3_config,
+                    )?);
+                }
 
-                let (bytes_received, remote_socket_addr) =
-                    match self.socket.recv_from(&mut input_buffer) {
-                        Ok(received) => received,
+                if let Some(http3_cx) = &mut http3_cx {
+                    // Processing Outgoing Requests to the Server over HTTP/3
+                    match req_rx.try_recv() {
                         Err(e) => {
-                            if e.kind() == std::io::ErrorKind::WouldBlock {
-                                debug!("Receiving incoming UDP packets would block");
-                                break 'incoming;
+                            error!("Error when receiving request: {:?}", e);
+                        }
+                        Ok((mut request, res_tx)) => {
+                            debug!("Attempting to Send HTTP/3 Request");
+                            let bodyless = request.body.is_none();
+
+                            let content_length = request.headers.content_length().unwrap_or(0);
+
+                            let stream_id = http3_cx.send_request(
+                                &mut connection,
+                                &request.headers,
+                                bodyless,
+                            )?;
+
+                            debug!("Sending Request for Stream ID: {stream_id}");
+
+                            // Save the response sender for this stream.
+                            sync_senders.insert(request.stream_id, res_tx.to_owned());
+
+                            if let Some(body) = &mut request.body {
+                                match http3_cx.send_body(&mut connection, stream_id, body, false) {
+                                    Ok(written) => {
+                                        info!("Wrote {written} of {content_length} bytes to stream {stream_id}");
+                                    }
+                                    Err(quiche::h3::Error::Done) => {
+                                        debug!(
+                                            "{} done writing http/3 request stream {:?}",
+                                            connection.trace_id(),
+                                            request.stream_id
+                                        );
+                                    }
+
+                                    Err(e) => {
+                                        error!("{} send failed: {:?}", connection.trace_id(), e);
+
+                                        close_connection(
+                                            &mut connection,
+                                            TransportErrorCode::InternalError,
+                                        )?;
+
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Listen for HTTP/3 incoming events.
+                    // Process HTTP/3 events.
+                    // NOTE: This loop may need to be outside the request loop.
+                    loop {
+                        debug!("Listening for HTTP/3 Responses");
+                        match http3_cx.poll(&mut connection) {
+                            Ok((stream_id, quiche::h3::Event::Headers { list, has_body })) => {
+                                debug!("Received headers {list:?} on stream id {stream_id}");
+                                if has_body {
+                                    // Create a new partial response.
+                                    partial_responses
+                                        .insert(PartialRpcResponse::new(stream_id, list));
+                                } else {
+                                    // Bodyless response returns immediately.
+                                    sync_senders.get_mut(&stream_id).and_then(|res_tx| {
+                                        res_tx
+                                            .send(RpcResponse::with_empty_body(stream_id, list))
+                                            .ok()
+                                    });
+                                    break;
+                                }
                             }
 
-                            return Err(Error::Io(e));
+                            Ok((stream_id, quiche::h3::Event::Data)) => {
+                                info!("Received HTTP/3 Data Event");
+                                match partial_responses.remove(&stream_id) {
+                                    Some(mut partial_response) => loop {
+                                        match http3_cx.recv_body(
+                                            &mut connection,
+                                            stream_id,
+                                            &mut partial_response.body,
+                                        ) {
+                                            Ok(read) => {
+                                                partial_response.written += read;
+                                                debug!(
+                                                    "Received {} bytes of response data on stream {}",
+                                                    read, stream_id
+                                                );
+                                            }
+                                            Err(quiche::h3::Error::Done) => {
+                                                let response = partial_response.into();
+
+                                                info!("Finished Reading Response: {response:?}");
+                                                // No more data to read. Send the response.
+                                                let res_tx = sync_senders
+                                                    // Note: if we remove the res_tx, the connection will
+                                                    // disconnect. Cleanup after the response is sent.
+                                                    .get_mut(&stream_id)
+                                                    .ok_or(Error::InternalError)?;
+
+                                                info!("Sending Response");
+
+                                                res_tx.send(response).map_err(|e| {
+                                                    error!("Error when sending response: {:?}", e);
+                                                    Error::InternalError
+                                                })?;
+
+                                                break;
+                                            }
+                                            Err(e) => {
+                                                error!(
+                                                    "{} recv failed: {:?}",
+                                                    connection.trace_id(),
+                                                    e
+                                                );
+
+                                                close_connection(
+                                                    &mut connection,
+                                                    TransportErrorCode::InternalError,
+                                                )?;
+
+                                                break;
+                                            }
+                                        }
+                                    },
+                                    None => {
+                                        warn!("received data for unknown stream id {}", stream_id);
+
+                                        // Continue to the next event.
+                                        continue;
+                                    }
+                                };
+                            }
+
+                            Ok((_stream_id, quiche::h3::Event::Finished)) => {
+                                debug!("HTTP/3 Connection Finished");
+
+                                close_connection(
+                                    &mut connection,
+                                    TransportErrorCode::ApplicationError(
+                                        "Connection Finished".to_string(),
+                                    ),
+                                )?;
+                            }
+
+                            Ok((_stream_id, quiche::h3::Event::Reset(e))) => {
+                                error!("request was reset by peer with {}, closing...", e);
+
+                                close_connection(
+                                    &mut connection,
+                                    TransportErrorCode::ApplicationError(
+                                        "Connection Reset".to_string(),
+                                    ),
+                                )?;
+                            }
+
+                            Ok((_, quiche::h3::Event::PriorityUpdate)) => {
+                                warn!("ignoring HTTP/3 priority update");
+                            }
+
+                            Ok((goaway_id, quiche::h3::Event::GoAway)) => {
+                                warn!("GOAWAY id={}", goaway_id);
+                            }
+
+                            Err(quiche::h3::Error::Done) => {
+                                debug!("{} done processing HTTP/3 events", connection.trace_id());
+                                break;
+                            }
+
+                            Err(e) => {
+                                error!("HTTP/3 processing failed: {:?}", e);
+
+                                break;
+                            }
+                        }
+                    } // End of HTTP/3 read event loop.
+                }
+
+                debug!("Processing Outgoing QUIC Packets");
+
+                // Outgoing Quic Packets;
+                'outgoing: loop {
+                    let (written, recipient) = match connection.send(&mut output_buffer) {
+                        Ok(sent) => sent,
+                        Err(quiche::Error::Done) => {
+                            break 'outgoing;
+                        }
+                        Err(_) => {
+                            error!("Error Writing to Remote Socket");
+                            break 'outgoing;
                         }
                     };
 
-                info!(
-                    "Received {} bytes from {:?}",
-                    bytes_received, remote_socket_addr
-                );
+                    if let Err(e) = socket.send_to(&output_buffer[..written], recipient.to) {
+                        // Re-try if the request would block.
+                        if e.kind() == std::io::ErrorKind::WouldBlock {
+                            debug!("send() would block");
+                            break 'outgoing;
+                        }
 
-                let read = match connection.recv(
-                    &mut input_buffer[..bytes_received],
-                    quiche::RecvInfo {
-                        to: self.socket.local_addr()?,
-                        from: remote_socket_addr,
-                    },
-                ) {
-                    Ok(read) => read,
-                    Err(e) => {
-                        error!("Recieved Error When Reading from Remote Socket: {:?}", e);
-                        continue 'incoming;
+                        return Err(Error::Io(e));
                     }
-                };
+                } // End of outgoing loop.
 
-                // handle the read data
-                // TODO: Handle the read data.
-
-                debug!("Received {read} bytes from remote socket");
-            } // end of 'incoming loop
-
-            if connection.is_closed() {
-                debug!("Connection closed");
-                break;
-            }
-
-            // Handle http3 connection
-            if self.http3_cx.is_none() && connection.is_established() {
-                debug!("Establishing HTTP/3 connection");
-                self.http3_cx = Some(quiche::h3::Connection::with_transport(
-                    &mut connection,
-                    &http3_config,
-                )?);
-            }
-
-            if let Some(http3_cx) = &mut self.http3_cx {
-                // TODO: Handle HTTP/3 Requests.
-
-                // Send a test request.
-                if send_test_request {
-                    info!("Sending test request");
-
-                    let headers = vec![
-                        RpcHeader::new(b":method", b"POST"),
-                        RpcHeader::new(b":scheme", b"http"),
-                        RpcHeader::new(b":authority", b"localhost"),
-                        RpcHeader::new(b":path", b"/complex/save_document"),
-                        RpcHeader::new(b"content-type", b"application/docbuf+rpc"),
-                        RpcHeader::new(b"user-agent", b"docbuf-rpc"),
-                    ];
-                    let bodyless = true;
-                    http3_cx.send_request(&mut connection, &headers, bodyless)?;
-
-                    send_test_request = false;
+                // Lastly, clean up the connection if it is closed.
+                if connection.is_closed() {
+                    debug!("Connection Closed");
+                    break;
                 }
-            }
+                debug!("End of Main Loop");
+            } // End of main loop.
 
-            // Listen for HTTP/3 events.
-            if let Some(http3_cx) = &mut self.http3_cx {
-                // Process HTTP/3 events.
-                loop {
-                    match http3_cx.poll(&mut connection) {
-                        Ok((stream_id, quiche::h3::Event::Headers { list, .. })) => {
-                            debug!("got response headers {:?} on stream id {}", list, stream_id);
-                        }
+            Ok::<(), Error>(())
+        });
 
-                        Ok((stream_id, quiche::h3::Event::Data)) => {
-                            while let Ok(read) =
-                                http3_cx.recv_body(&mut connection, stream_id, &mut input_buffer)
-                            {
-                                debug!(
-                                    "got {} bytes of response data on stream {}",
-                                    read, stream_id
-                                );
-
-                                debug!("{}", unsafe {
-                                    std::str::from_utf8_unchecked(&input_buffer[..read])
-                                });
-                            }
-                        }
-
-                        Ok((_stream_id, quiche::h3::Event::Finished)) => {
-                            debug!("HTTP/3 Connection Finished");
-
-                            Self::close_connection(
-                                &mut connection,
-                                TransportErrorCode::ApplicationError(
-                                    "Connection Finished".to_string(),
-                                ),
-                            )?;
-                        }
-
-                        Ok((_stream_id, quiche::h3::Event::Reset(e))) => {
-                            error!("request was reset by peer with {}, closing...", e);
-
-                            Self::close_connection(
-                                &mut connection,
-                                TransportErrorCode::ApplicationError(
-                                    "Connection Reset".to_string(),
-                                ),
-                            )?;
-                        }
-
-                        Ok((_, quiche::h3::Event::PriorityUpdate)) => {
-                            warn!("ignoring HTTP/3 priority update");
-                        }
-
-                        Ok((goaway_id, quiche::h3::Event::GoAway)) => {
-                            warn!("GOAWAY id={}", goaway_id);
-                        }
-
-                        Err(quiche::h3::Error::Done) => {
-                            break;
-                        }
-
-                        Err(e) => {
-                            error!("HTTP/3 processing failed: {:?}", e);
-
-                            break;
-                        }
-                    }
-                } // End of HTTP/3 read event loop.
-            }
-
-            // Outgoing Quic Packets;
-            'outgoing: loop {
-                let (written, recipient) = match connection.send(&mut output_buffer) {
-                    Ok(sent) => sent,
-                    Err(quiche::Error::Done) => {
-                        break 'outgoing;
-                    }
-                    Err(_) => {
-                        error!("Error Writing to Remote Socket");
-                        break 'outgoing;
-                    }
-                };
-
-                if let Err(e) = self.socket.send_to(&output_buffer[..written], recipient.to) {
-                    // Re-try if the request would block.
-                    if e.kind() == std::io::ErrorKind::WouldBlock {
-                        debug!("send() would block");
-                        break 'outgoing;
-                    }
-
-                    return Err(Error::Io(e));
-                }
-            } // End of outgoing loop.
-
-            // Lastly, clean up the connection if it is closed.
-            if connection.is_closed() {
-                debug!("Connection Closed");
-                break;
-            }
-        } // End of main loop.
-
-        Ok(())
-    }
-
-    // Utility method for closing a connection with a transport error code.
-    pub fn close_connection(
-        connection: &mut quiche::Connection,
-        error_code: TransportErrorCode,
-    ) -> Result<(), Error> {
-        let (inform_peer, code, reason) = error_code.into_parts();
-
-        connection.close(inform_peer, code, reason.as_bytes())?;
-
-        Ok(())
+        Ok(Self {
+            daemon,
+            sender: req_tx,
+        })
     }
 }

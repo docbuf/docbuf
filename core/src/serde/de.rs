@@ -366,7 +366,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     {
         let field = self.current_field()?;
 
-        dbg!("Field: {:?}", field);
+        // dbg!("Field: {:?}", field);
 
         self.set_remaining_items(&field.r#type)?;
 

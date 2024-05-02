@@ -2,6 +2,8 @@ use std::sync::{MutexGuard, TryLockError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error(transparent)]
+    Core(#[from] docbuf_core::error::Error),
     #[error("Invalid Socket Address")]
     InvalidSocketAddress,
     #[error(transparent)]
@@ -38,6 +40,8 @@ pub enum Error {
     RpcResponseSendError(#[from] crate::RpcResponseSendError),
     #[error(transparent)]
     RecvError(#[from] std::sync::mpsc::RecvError),
+    #[error(transparent)]
+    TryRecvError(#[from] std::sync::mpsc::TryRecvError),
     #[error("Thread Join Error")]
     ThreadJoinError(Box<dyn std::any::Any + Send>),
     #[error("Invalid Header Value")]
@@ -48,4 +52,12 @@ pub enum Error {
     MethodNotFound(String, String),
     #[error("Failed to lock RPC context")]
     RpcContextLockError,
+    #[error("Missing Request Body")]
+    MissingRequestBody,
+    #[error("Unknown Stream ID: {0}")]
+    UnknownStreamId(u64),
+    #[error("Response Timed Out")]
+    ResponseTimedOut,
+    #[error("Internal Error")]
+    InternalError,
 }

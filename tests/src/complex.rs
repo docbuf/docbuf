@@ -1,6 +1,6 @@
 use crate::{SetTestValues, TestHarness};
 
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use docbuf_core::{
     deps::uuid::Uuid,
@@ -140,7 +140,7 @@ impl PartialEq for Signature {
 impl Document {
     pub fn dummy() -> Self {
         Self {
-            _uuid: Uuid::new_v4(),
+            _uuid: Uuid::from_str("b39a7fb6-a2fc-44d7-9446-8f835df29118").unwrap(),
             author: ["A"; 16].concat(),
             title: ["T"; 64].concat(),
             body: ["B"; 2048].concat(),

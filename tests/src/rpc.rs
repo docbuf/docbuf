@@ -7,7 +7,6 @@ use std::{collections::HashMap, net::SocketAddr};
 use ::serde::{Deserialize, Serialize};
 use docbuf_core::serde;
 use docbuf_core::traits::DocBuf;
-use docbuf_rpc::RpcHeader;
 use docbuf_rpc::{
     client::RpcClient,
     error::Error,
@@ -16,7 +15,9 @@ use docbuf_rpc::{
     service::{RpcMethodHandler, RpcService, RpcServices},
     RpcRequest, RpcResponse, RpcResult,
 };
+use docbuf_rpc::{RpcHeader, RpcHeaders};
 use tokio::{io::join, join};
+use tracing::info;
 use tracing::{level_filters::LevelFilter, Subscriber};
 
 const SERVER_PORT: u16 = 60250;
@@ -26,24 +27,42 @@ const CERTIFICATE: &str = "certs/cert.crt";
 const PRIVATE_KEY: &str = "certs/cert.key";
 const ROOT_CERTIFICATE: &str = "certs/rootca.crt";
 
-fn complex_save_document<Ctx>(
-    ctx: Ctx,
-    req: RpcRequest<RpcHeader>,
-) -> RpcResult<RpcResponse<RpcHeader>>
-where
-    Ctx: Clone + Send + Sync + 'static,
-{
-    unimplemented!("Service Method")
-}
+pub struct ExampleService;
 
-fn complex_get_document<Ctx>(
-    ctx: Ctx,
-    req: RpcRequest<RpcHeader>,
-) -> RpcResult<RpcResponse<RpcHeader>>
-where
-    Ctx: Clone + Send + Sync + 'static,
-{
-    unimplemented!("Service Method")
+impl ExampleService {
+    fn complex_save_document<Ctx>(_ctx: Ctx, mut req: RpcRequest) -> RpcResult
+    where
+        Ctx: Send + Sync + 'static,
+    {
+        let mut document = req.from_docbuf::<complex::Document>()?;
+
+        info!("Received a request {req:?} to save a document: {document:?}");
+
+        document.author = "Alice".to_string();
+
+        let mut response = RpcResponse::with_empty_body(req.stream_id, req.headers);
+        document.to_docbuf(&mut response.body)?;
+
+        Ok(response)
+    }
+
+    fn complex_get_document<Ctx>(ctx: Ctx, mut req: RpcRequest) -> RpcResult
+    where
+        Ctx: Send + Sync + 'static,
+    {
+        let document = req.from_docbuf::<complex::Document>()?;
+
+        unimplemented!("Service Method")
+    }
+
+    fn service<Ctx>() -> Result<RpcService<Ctx>, Error>
+    where
+        Ctx: Send + Sync + 'static,
+    {
+        RpcService::<Ctx>::new("complex")
+            .add_method("save_document", Self::complex_save_document)?
+            .add_method("get_document", Self::complex_get_document)
+    }
 }
 
 #[tokio::test]
@@ -53,7 +72,7 @@ async fn test_rpc_server() -> Result<(), Error> {
         .finish();
 
     // Add LEVEL filter to the subscriber to include DEBUG.
-    println!("Log Level: {:?}", subscriber.max_level_hint());
+    // println!("Log Level: {:?}", subscriber.max_level_hint());
 
     tracing::subscriber::set_global_default(subscriber)
         .expect("Failed to set global default subscriber");
@@ -66,24 +85,12 @@ async fn test_rpc_server() -> Result<(), Error> {
         boring_ctx_builder: None,
     })?;
 
-    let _options = quic_config.as_mut();
-    // options.verify_peer(false);
-
-    println!("Spawning RPC Server");
-    // IPv6 loopback address.
-    // let complex_service = RpcServices::new();
-
     let ctx = Arc::new(Mutex::new(()));
 
-    RpcServer::bind(addr, ctx, Some(quic_config))?
-        .start(
-            RpcServices::new().add_service(
-                "complex",
-                RpcService::<Arc<Mutex<()>>>::new()
-                    .add_method("save_document", complex_save_document)?
-                    .add_method("get_document", complex_get_document)?,
-            )?,
-        )
+    let services = RpcServices::new(ctx).add_service(ExampleService::service()?)?;
+
+    RpcServer::bind(addr)?
+        .start(services, Some(quic_config))
         .await?;
 
     Ok(())
@@ -114,10 +121,40 @@ async fn test_rpc_client() -> Result<(), Error> {
     options.load_verify_locations_from_file(ROOT_CERTIFICATE)?;
     // options.verify_peer(false);
 
-    let mut client = RpcClient::new(Option::<SocketAddr>::None, Some(quic_config))?;
+    // let mut client = RpcClient::bind(Option::<SocketAddr>::None)?;
 
     let server_name = Some("docbuf.com");
-    client.connect(server_addr, server_name).await?;
+
+    let client = RpcClient::connect(server_addr, server_name, Some(quic_config))?;
+
+    let doc = complex::Document::dummy();
+    let mut buffer = complex::Document::vtable()?.alloc_buf();
+    doc.to_docbuf(&mut buffer)?;
+
+    info!("Sending Test Request");
+
+    // Sleep for 5 seconds.
+    // std::thread::sleep(std::time::Duration::from_secs(5));
+
+    // Send a test request.
+    let request = RpcRequest::default()
+        .add_headers(
+            vec![
+                RpcHeader::new(b":method", b"POST"),
+                RpcHeader::new(b":scheme", b"http"),
+                RpcHeader::new(b":authority", b"localhost"),
+                RpcHeader::new(b":path", b"/complex/save_document"),
+                RpcHeader::new(b"content-type", b"application/docbuf+rpc"),
+                RpcHeader::new(b"user-agent", b"docbuf-rpc-client/0.1.0"),
+                RpcHeader::new(b"content-length", &buffer.len().to_string().as_bytes()),
+            ]
+            .into(),
+        )
+        .add_body(buffer.clone());
+
+    let response = client.send(request).await?;
+
+    info!("Response: {response:?}");
 
     Ok(())
 }
@@ -139,7 +176,7 @@ fn test_rpc_macro() -> Result<(), docbuf_core::error::Error> {
     //     service = "complex";
     // }]
     impl DocumentService {
-        fn save_document(&self, doc: Document) -> RpcResult<Document> {
+        fn save_document(&self, doc: Document) -> RpcResult {
             unimplemented!()
 
             // Ok(Document {})

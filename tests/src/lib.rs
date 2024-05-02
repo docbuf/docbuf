@@ -59,6 +59,8 @@ trait TestHarness<'de>:
         // Serialize
         self.to_docbuf(buffer)?;
 
+        println!("Buffer: {:?}", buffer);
+
         let docbuf = buffer.clone();
 
         // deserialize

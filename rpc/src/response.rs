@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender};
 
 #[derive(Debug, Clone)]
-pub struct RpcResponse<Header> {
-    pub(crate) stream_id: StreamId,
-    pub(crate) headers: RpcHeaders<Header>,
-    pub(crate) body: Vec<u8>,
+pub struct RpcResponse {
+    pub stream_id: StreamId,
+    pub headers: RpcHeaders,
+    pub body: Vec<u8>,
 }
 
-impl<Header> RpcResponse<Header> {
-    pub fn new(stream_id: StreamId, headers: RpcHeaders<Header>, body: Vec<u8>) -> Self {
+impl RpcResponse {
+    pub fn new(stream_id: StreamId, headers: RpcHeaders, body: Vec<u8>) -> Self {
         Self {
             stream_id,
             headers,
@@ -19,9 +19,17 @@ impl<Header> RpcResponse<Header> {
         }
     }
 
+    pub fn with_empty_body(stream_id: StreamId, headers: impl Into<RpcHeaders>) -> Self {
+        Self {
+            stream_id,
+            headers: headers.into(),
+            body: Vec::new(),
+        }
+    }
+
     // If the response is partially written, return a partial response, setting the bytes_written.
-    pub fn consumed_partial(self, bytes_written: usize) -> RpcPartialResponse<Header> {
-        RpcPartialResponse {
+    pub fn consumed_partial(self, bytes_written: usize) -> PartialRpcResponse {
+        PartialRpcResponse {
             stream_id: self.stream_id,
             headers: None,
             body: self.body,
@@ -30,16 +38,16 @@ impl<Header> RpcResponse<Header> {
     }
 }
 
-pub struct RpcPartialResponse<Header> {
+pub struct PartialRpcResponse {
     pub(crate) stream_id: StreamId,
-    pub(crate) headers: Option<RpcHeaders<Header>>,
+    pub(crate) headers: Option<RpcHeaders>,
     pub(crate) body: Vec<u8>,
     pub(crate) written: usize,
 }
 
-impl<Header> Into<RpcPartialResponse<Header>> for RpcResponse<Header> {
-    fn into(self) -> RpcPartialResponse<Header> {
-        RpcPartialResponse {
+impl Into<PartialRpcResponse> for RpcResponse {
+    fn into(self) -> PartialRpcResponse {
+        PartialRpcResponse {
             stream_id: self.stream_id,
             headers: Some(self.headers),
             body: self.body,
@@ -48,44 +56,92 @@ impl<Header> Into<RpcPartialResponse<Header>> for RpcResponse<Header> {
     }
 }
 
-impl<Header> RpcPartialResponse<Header> {
-    pub fn new(stream_id: StreamId) -> Self {
-        Self {
-            stream_id,
-            headers: None,
-            body: Vec::new(),
-            written: 0,
+impl Into<RpcResponse> for PartialRpcResponse {
+    fn into(self) -> RpcResponse {
+        RpcResponse {
+            stream_id: self.stream_id,
+            headers: self.headers.unwrap_or(RpcHeaders::empty()),
+            body: self.body,
         }
     }
 }
 
-pub struct RpcPartialResponses<T>(pub(crate) HashMap<StreamId, RpcPartialResponse<T>>);
+impl PartialRpcResponse {
+    pub fn new(stream_id: StreamId, headers: impl Into<RpcHeaders>) -> Self {
+        let headers = headers.into();
 
-impl<T> RpcPartialResponses<T> {
+        let body = headers
+            .content_length()
+            .map(|content_length| vec![0; content_length])
+            .unwrap_or_default();
+
+        Self {
+            stream_id,
+            headers: Some(headers),
+            body,
+            written: 0,
+        }
+    }
+
+    pub fn append_data(&mut self, data: &[u8]) {
+        self.written += data.len();
+        self.body.extend_from_slice(data);
+    }
+}
+
+pub struct PartialRpcResponses(pub(crate) HashMap<StreamId, PartialRpcResponse>);
+
+impl PartialRpcResponses {
     pub fn new() -> Self {
         Self(HashMap::new())
     }
 
-    pub fn insert(&mut self, partial: RpcPartialResponse<T>) {
+    pub fn insert(&mut self, partial: PartialRpcResponse) {
         self.0.insert(partial.stream_id, partial);
     }
 
-    pub fn remove(&mut self, stream_id: StreamId) -> Option<RpcPartialResponse<T>> {
-        self.0.remove(&stream_id)
+    pub fn remove(&mut self, stream_id: &StreamId) -> Option<PartialRpcResponse> {
+        self.0.remove(stream_id)
+    }
+
+    pub fn get_mut(&mut self, stream_id: &StreamId) -> Option<&mut PartialRpcResponse> {
+        self.0.get_mut(stream_id)
     }
 }
 
-pub type RpcResponseSyncSender<Header> = SyncSender<RpcResponse<Header>>;
-pub type RpcResponseReceiver<Header> = Receiver<RpcResponse<Header>>;
+pub type RpcResponseSyncSender = SyncSender<RpcResponse>;
+pub type RpcResponseReceiver = Receiver<RpcResponse>;
 
-pub type RpcResponseSendError = SendError<RpcResponse<quiche::h3::Header>>;
+pub type RpcResponseSendError = SendError<RpcResponse>;
 
-impl RpcResponse<quiche::h3::Header> {
-    /// Create a channel for sending and receiving requests.
-    pub fn oneshot() -> (
-        RpcResponseSyncSender<quiche::h3::Header>,
-        RpcResponseReceiver<quiche::h3::Header>,
-    ) {
+pub struct RpcResponseSyncSenders(pub(crate) HashMap<StreamId, RpcResponseSyncSender>);
+
+impl RpcResponseSyncSenders {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub fn insert(&mut self, stream_id: StreamId, sender: RpcResponseSyncSender) {
+        self.0.insert(stream_id, sender);
+    }
+
+    pub fn remove(&mut self, stream_id: &StreamId) -> Option<RpcResponseSyncSender> {
+        self.0.remove(stream_id)
+    }
+
+    pub fn get_mut(&mut self, stream_id: &StreamId) -> Option<&mut RpcResponseSyncSender> {
+        self.0.get_mut(stream_id)
+    }
+}
+
+impl RpcResponse {
+    /// Create a `oneshot` channel for sending and receiving requests.
+    pub fn oneshot() -> (RpcResponseSyncSender, RpcResponseReceiver) {
         sync_channel(1)
+    }
+
+    /// Returns a new map for response sync senders.
+    pub fn sync_senders() -> RpcResponseSyncSenders {
+        RpcResponseSyncSenders::new()
     }
 }

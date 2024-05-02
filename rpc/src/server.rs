@@ -1,12 +1,9 @@
 use crate::error::Error;
 // use crate::http3::Http3Config;
 use crate::quic::{QuicConfig, TlsOptions, TransportErrorCode, MAX_QUIC_DATAGRAM_SIZE};
-use crate::{
-    connections::*, RpcRequest, RpcResponse, RpcResult, RpcService, RpcServiceName, RpcServices,
-};
+use crate::{connections::*, PartialRpcRequests, RpcRequest, RpcServices};
 
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use mio::net::UdpSocket;
@@ -32,37 +29,17 @@ const DEFAULT_POLL_WINDOW: Duration = Duration::from_millis(50);
 pub type StreamId = u64;
 
 /// RPC Server.
-pub struct RpcServer<Id, Conn, QConfig: Clone, Http3Conn, Header, Ctx>
-where
-    Ctx: Clone + Send + Sync + 'static,
-{
+pub struct RpcServer<Id, Conn, Http3Conn> {
     socket: UdpSocket,
     queue: Poll,
     events: Events,
-    quic_config: QuicConfig<QConfig>,
-    connections: RpcConnections<Id, Conn, Http3Conn, Header>,
+    connections: RpcConnections<Id, Conn, Http3Conn>,
     hmac_key: ring::hmac::Key,
-    context: Ctx,
 }
 
-impl<Ctx>
-    RpcServer<
-        quiche::ConnectionId<'static>,
-        quiche::Connection,
-        quiche::Config,
-        quiche::h3::Connection,
-        quiche::h3::Header,
-        Ctx,
-    >
-where
-    Ctx: Clone + Send + Sync + 'static,
-{
+impl RpcServer<quiche::ConnectionId<'static>, quiche::Connection, quiche::h3::Connection> {
     /// Bind to a socket address, listening on UDP.
-    pub fn bind(
-        socket_address: impl TryInto<SocketAddr>,
-        context: Ctx,
-        quic_config: Option<QuicConfig<quiche::Config>>,
-    ) -> Result<Self, Error> {
+    pub fn bind(socket_address: impl TryInto<SocketAddr>) -> Result<Self, Error> {
         let socket_address = socket_address
             .try_into()
             .map_err(|_| Error::InvalidSocketAddress)?;
@@ -79,18 +56,12 @@ where
         let connections = RpcConnections::new();
         let hmac_key = Self::generate_hmac_key()?;
 
-        let quic_config = quic_config
-            .map(|c| Ok(c))
-            .unwrap_or_else(|| QuicConfig::development(TlsOptions::None))?;
-
         Ok(Self {
             socket,
             queue,
             events,
             connections,
             hmac_key,
-            quic_config,
-            context,
         })
     }
 
@@ -100,7 +71,18 @@ where
     }
 
     /// Start the RPC server.
-    pub async fn start(&mut self, services: RpcServices<Ctx>) -> Result<(), Error> {
+    pub async fn start<Ctx>(
+        &mut self,
+        services: RpcServices<Ctx>,
+        quic_config: Option<QuicConfig<quiche::Config>>,
+    ) -> Result<(), Error>
+    where
+        Ctx: Clone + Send + Sync + 'static,
+    {
+        let mut quic_config = quic_config
+            .map(|c| Ok(c))
+            .unwrap_or_else(|| QuicConfig::development(TlsOptions::None))?;
+
         let mut input_buffer = Vec::from([0; MAX_UDP_PAYLOAD_SIZE]);
         let mut output_buffer = Vec::from([0; MAX_QUIC_DATAGRAM_SIZE]);
 
@@ -109,9 +91,6 @@ where
 
         // Process Requests on a separate thread.
         // Join to main thread prior to returning.
-        let ctx = self.context.clone();
-        // let services = Arc::new(Mutex::new(services));
-
         let request_processor = std::thread::spawn(move || {
             // Wait for incoming requests.
             while let Ok((request, res_tx)) = req_rx.recv() {
@@ -123,13 +102,15 @@ where
 
                 // Find the service method given the request headers.
                 match services.get_method(service_name, method_name) {
-                    Some(method) => match method(ctx.clone(), request) {
-                        RpcResult::Future(val) => {}
-                        RpcResult::Iter(val) => {}
+                    Some(method) => match method(services.ctx.clone(), request) {
+                        Ok(res) => res_tx.send(res)?,
+                        Err(e) => {
+                            error!("Error Processing Request: {e}");
+                        }
                     },
                     None => {
-                        warn!("Service {service_name} Method {method_name} not found");
-                        todo!("Send Error Response")
+                        warn!("Service {service_name} Method {method_name} not found, dropping packet.");
+                        // todo!("Notify client of missing method");
                         // let response = RpcResponse::error(
                         //     TransportErrorCode::HTTP3_MISSING_SETTINGS,
                         //     "Method not found",
@@ -265,7 +246,10 @@ where
                             &source_id.clone(),
                             &mut output_buffer,
                         ) {
-                            Ok(Some(odcid)) => odcid,
+                            Ok(Some(odcid)) => {
+                                debug!("Retrieved ODCID: {odcid:?}");
+                                odcid
+                            }
                             Err(e) => {
                                 error!("Failed to retrieve ODCID: {}", e);
 
@@ -280,19 +264,25 @@ where
                             }
                         };
 
+                        debug!(
+                            "Attempting to accept new connection: {:?}",
+                            quic_header.dcid
+                        );
+
                         let connection = quiche::accept(
-                            &quic_header.dcid.clone(),
+                            &quic_header.dcid,
                             Some(&odcid),
                             self.address()?,
                             remote_socket_addr,
-                            // Make a mutable copy of the quic config.
-                            &mut self.quic_config.clone().into(),
+                            &mut quic_config.as_mut(),
                         )?;
+
+                        info!("Inserting New Connection");
 
                         // Accept the connection.
                         connections.insert(quic_header.dcid.clone(), connection.into());
 
-                        info!("Accepted New Connection: {:?}", server_id);
+                        info!("Accepted New Connection");
 
                         // Return a mutable reference to the connection.
                         connections
@@ -302,7 +292,7 @@ where
                 };
 
                 // Read the packet into the connection.
-                let read = match connection.inner.recv(
+                let bytes_read = match connection.inner.recv(
                     packet_buffer,
                     quiche::RecvInfo {
                         to: self.address()?,
@@ -321,7 +311,7 @@ where
                     }
                 };
 
-                debug!("Read Packet into Connection: {:?}", read);
+                debug!("Bytes read from packet into Connection: {:?}", bytes_read);
 
                 // Create a new HTTP/3 Connection.
                 if !connection.is_http3_established() {
@@ -347,10 +337,14 @@ where
                     debug!("Handling HTTP/3 Connection");
 
                     // Write HTTP/3 responses.
-                    connection.write_http3_responses()?;
+                    if let Err(e) = connection.write_http3_responses() {
+                        error!("Failed to write HTTP/3 responses: {}", e);
+                    }
 
                     // Read HTTP/3 requests.
-                    connection.read_http3_requests(&req_tx)?;
+                    if let Err(e) = connection.read_http3_requests(&req_tx, &mut input_buffer) {
+                        error!("Failed to read HTTP/3 requests: {}", e);
+                    }
                 }
             } // End of incoming loop.
 
@@ -419,6 +413,7 @@ where
                 // Forget the connection if it is closed.
                 if conn.inner.is_closed() {
                     debug!("Connection {} closed", conn.inner.trace_id());
+
                     return false;
                 }
 
@@ -581,19 +576,5 @@ where
         };
 
         Ok(odcid)
-    }
-
-    // Utility method for closing a connection with a transport error code.
-    pub fn close_connection(
-        connection: &mut quiche::Connection,
-        error_code: TransportErrorCode,
-    ) -> Result<(), Error> {
-        warn!("Closing connection with error code: {:?}", error_code);
-
-        let (inform_peer, code, reason) = error_code.into_parts();
-
-        connection.close(inform_peer, code, reason.as_bytes())?;
-
-        Ok(())
     }
 }
