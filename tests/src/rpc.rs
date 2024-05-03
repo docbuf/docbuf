@@ -30,27 +30,43 @@ const ROOT_CERTIFICATE: &str = "certs/rootca.crt";
 pub struct ExampleService;
 
 impl ExampleService {
+    fn save_document<Ctx>(
+        _ctx: Ctx,
+        mut document: complex::Document,
+    ) -> Result<complex::Document, Error>
+    where
+        Ctx: Send + Sync + 'static,
+    {
+        info!("Received a request to save a document: {document:?}");
+
+        document.author = "Bob".to_string();
+
+        Ok(document)
+    }
+
     fn complex_save_document<Ctx>(_ctx: Ctx, mut req: RpcRequest) -> RpcResult
     where
         Ctx: Send + Sync + 'static,
     {
-        let mut document = req.from_docbuf::<complex::Document>()?;
+        let document = Self::save_document(_ctx, req.as_docbuf::<complex::Document>()?)?;
 
-        info!("Received a request {req:?} to save a document: {document:?}");
+        // Instantiate the response content body buffer to the length of the content length.
+        let mut buffer = Vec::new();
 
-        document.author = "Alice".to_string();
+        document.to_docbuf(&mut buffer)?;
 
-        let mut response = RpcResponse::with_empty_body(req.stream_id, req.headers);
-        document.to_docbuf(&mut response.body)?;
+        let headers = RpcHeaders::default()
+            .with_path(req.headers.path()?)
+            .with_content_length(buffer.len());
 
-        Ok(response)
+        Ok(RpcResponse::new(req.stream_id, headers, buffer))
     }
 
     fn complex_get_document<Ctx>(ctx: Ctx, mut req: RpcRequest) -> RpcResult
     where
         Ctx: Send + Sync + 'static,
     {
-        let document = req.from_docbuf::<complex::Document>()?;
+        let document = req.as_docbuf::<complex::Document>()?;
 
         unimplemented!("Service Method")
     }
@@ -131,7 +147,7 @@ async fn test_rpc_client() -> Result<(), Error> {
     let mut buffer = complex::Document::vtable()?.alloc_buf();
     doc.to_docbuf(&mut buffer)?;
 
-    info!("Sending Test Request");
+    info!("Sending Test Request: {buffer:?}");
 
     // Sleep for 5 seconds.
     // std::thread::sleep(std::time::Duration::from_secs(5));
@@ -152,9 +168,13 @@ async fn test_rpc_client() -> Result<(), Error> {
         )
         .add_body(buffer.clone());
 
-    let response = client.send(request).await?;
+    let mut response = client.send(request).await?;
 
     info!("Response: {response:?}");
+
+    let doc = complex::Document::from_docbuf(&mut response.body).expect("Failed to parse document");
+
+    info!("Document: {doc:?}");
 
     Ok(())
 }
@@ -166,20 +186,25 @@ fn test_rpc_macro() -> Result<(), docbuf_core::error::Error> {
     use docbuf_rpc::RpcResult;
 
     #[docbuf]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Document {}
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct Hello {
+        #[docbuf {
+            // Field validation
+            // e.g., Regular expression validation.
+            regex = "^[a-zA-Z ]{1,}$";
+        }]
+        pub name: String,
+    }
 
-    // Create a service for the Document struct.
-    pub struct DocumentService {}
-
-    // #[docbuf_rpc {
-    //     service = "complex";
-    // }]
-    impl DocumentService {
-        fn save_document(&self, doc: Document) -> RpcResult {
-            unimplemented!()
-
-            // Ok(Document {})
+    // #[docbuf_rpc]
+    impl Hello {
+        // User-Defined RPC Method Handler
+        fn say_hello<Ctx>(ctx: &Ctx, mut doc: Hello) -> Result<Hello, docbuf_rpc::Error>
+        where
+            Ctx: Send + Sync + 'static,
+        {
+            // Implementation logic defined here.
+            unimplemented!("say hello not implemented");
         }
     }
 

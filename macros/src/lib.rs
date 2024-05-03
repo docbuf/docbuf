@@ -1,4 +1,4 @@
-use docbuf_derive::{derive, proc_macro2, quote::quote};
+use docbuf_derive::{derive, proc_macro2, quote::quote, rpc};
 
 use proc_macro::TokenStream;
 use proc_macro_error::{abort_call_site, emit_error, proc_macro_error};
@@ -40,6 +40,8 @@ pub fn docbuf_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     println!("Attr {attr}");
     println!("Item {item}");
+
+    rpc::parse_impl(&item);
 
     abort_call_site!("DocBuf RPC Not Implemented");
 

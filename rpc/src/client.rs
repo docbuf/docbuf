@@ -7,7 +7,7 @@ use crate::{
     RpcRequestSender, RpcResponse,
 };
 
-use std::{net::SocketAddr, thread::JoinHandle, time::Duration};
+use std::{net::SocketAddr, sync::mpsc::TryRecvError, thread::JoinHandle, time::Duration};
 use std::{
     ops::Deref,
     sync::mpsc::{Receiver, Sender},
@@ -39,12 +39,22 @@ impl RpcClient {
         info!("Sending request: {request:?}");
         self.sender.send((request, req_tx))?;
 
-        while let Ok(response) = req_rx.try_recv() {
-            info!("Received response");
-            return Ok(response);
+        loop {
+            match req_rx.try_recv() {
+                Ok(response) => {
+                    info!("Received response: {response:?}");
+                    return Ok(response);
+                }
+                Err(TryRecvError::Empty) => {
+                    error!("Received Empty response");
+                    continue;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    error!("Received Disconnected response");
+                    return Err(Error::InternalError);
+                }
+            }
         }
-
-        Err(Error::InternalError)
     }
 
     fn new_connection_id<'a>(
@@ -246,7 +256,6 @@ impl RpcClient {
 
                     // Listen for HTTP/3 incoming events.
                     // Process HTTP/3 events.
-                    // NOTE: This loop may need to be outside the request loop.
                     loop {
                         debug!("Listening for HTTP/3 Responses");
                         match http3_cx.poll(&mut connection) {

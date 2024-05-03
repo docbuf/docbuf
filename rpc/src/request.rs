@@ -89,7 +89,7 @@ impl RpcRequest {
         }
     }
 
-    pub fn from_docbuf<Doc: DocBuf>(&mut self) -> Result<<Doc as DocBuf>::Doc, crate::Error> {
+    pub fn as_docbuf<Doc: DocBuf>(&mut self) -> Result<<Doc as DocBuf>::Doc, crate::Error> {
         Ok(self
             .body
             .as_mut()
