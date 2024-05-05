@@ -41,11 +41,7 @@ pub fn docbuf_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
     println!("Attr {attr}");
     println!("Item {item}");
 
-    rpc::parse_impl(&item);
-
-    abort_call_site!("DocBuf RPC Not Implemented");
-
-    // unimplemented!("Not implemented");
-
-    // derive::derive_docbuf_rpc(attr, item).into()
+    rpc::gen_rpc(item, attr)
+        .expect("Failed to parse RPC item")
+        .into()
 }

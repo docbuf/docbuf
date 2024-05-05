@@ -7,6 +7,7 @@ use std::{collections::HashMap, net::SocketAddr};
 use ::serde::{Deserialize, Serialize};
 use docbuf_core::serde;
 use docbuf_core::traits::DocBuf;
+use docbuf_macros::*;
 use docbuf_rpc::{
     client::RpcClient,
     error::Error,
@@ -81,6 +82,44 @@ impl ExampleService {
     }
 }
 
+#[docbuf]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Hello {
+    #[docbuf {
+        // Field validation
+        // e.g., Regular expression validation.
+        regex = "^[a-zA-Z ]{1,}$";
+    }]
+    pub name: String,
+}
+
+#[docbuf_rpc]
+impl Hello {
+    // User-Defined RPC Method Handler
+    fn say_hello(ctx: Arc<Mutex<()>>, mut doc: Hello) -> Result<Hello, docbuf_rpc::Error> {
+        doc.name = "DocBuf RPC Hello Service".to_string();
+
+        Ok(doc)
+    }
+}
+
+#[docbuf_rpc {
+    service = "hello";
+}]
+pub trait HelloClient {
+    // Define an RPC client method interface for the `Hello` service.
+    fn say_hello(
+        // provide a reference to the RPC client.
+        client: &RpcClient,
+        // provide the request DocBuf document.
+        doc: Hello,
+    ) -> Result<Hello, docbuf_rpc::Error>;
+}
+
+pub struct TestClient;
+
+impl HelloClient for TestClient {}
+
 #[tokio::test]
 async fn test_rpc_server() -> Result<(), Error> {
     let subscriber = tracing_subscriber::fmt()
@@ -95,7 +134,7 @@ async fn test_rpc_server() -> Result<(), Error> {
 
     let addr: SocketAddr = format!("[::1]:{SERVER_PORT}").parse()?;
 
-    let mut quic_config = QuicConfig::development(TlsOptions::Server {
+    let quic_config = QuicConfig::development(TlsOptions::Server {
         cert_chain: PathBuf::from(CERTIFICATE),
         key: PathBuf::from(PRIVATE_KEY),
         boring_ctx_builder: None,
@@ -103,7 +142,10 @@ async fn test_rpc_server() -> Result<(), Error> {
 
     let ctx = Arc::new(Mutex::new(()));
 
-    let services = RpcServices::new(ctx).add_service(ExampleService::service()?)?;
+    let services = RpcServices::new(ctx)
+        .add_service(ExampleService::service()?)?
+        // Add the Hello RPC Service generated from the macro.
+        .add_service(Hello::rpc_service()?)?;
 
     RpcServer::bind(addr)?
         .start(services, Some(quic_config))
@@ -143,70 +185,46 @@ async fn test_rpc_client() -> Result<(), Error> {
 
     let client = RpcClient::connect(server_addr, server_name, Some(quic_config))?;
 
-    let doc = complex::Document::dummy();
-    let mut buffer = complex::Document::vtable()?.alloc_buf();
-    doc.to_docbuf(&mut buffer)?;
+    let hello = Hello {
+        name: "DocBuf RPC Client".to_string(),
+    };
 
-    info!("Sending Test Request: {buffer:?}");
+    let response = TestClient::say_hello(&client, hello)?;
 
-    // Sleep for 5 seconds.
-    // std::thread::sleep(std::time::Duration::from_secs(5));
+    println!("Hello: {response:?}");
 
-    // Send a test request.
-    let request = RpcRequest::default()
-        .add_headers(
-            vec![
-                RpcHeader::new(b":method", b"POST"),
-                RpcHeader::new(b":scheme", b"http"),
-                RpcHeader::new(b":authority", b"localhost"),
-                RpcHeader::new(b":path", b"/complex/save_document"),
-                RpcHeader::new(b"content-type", b"application/docbuf+rpc"),
-                RpcHeader::new(b"user-agent", b"docbuf-rpc-client/0.1.0"),
-                RpcHeader::new(b"content-length", &buffer.len().to_string().as_bytes()),
-            ]
-            .into(),
-        )
-        .add_body(buffer.clone());
+    // let doc = complex::Document::dummy();
+    // let mut buffer = complex::Document::vtable()?.alloc_buf();
+    // doc.to_docbuf(&mut buffer)?;
 
-    let mut response = client.send(request).await?;
+    // info!("Sending Test Request: {buffer:?}");
 
-    info!("Response: {response:?}");
+    // // Sleep for 5 seconds.
+    // // std::thread::sleep(std::time::Duration::from_secs(5));
 
-    let doc = complex::Document::from_docbuf(&mut response.body).expect("Failed to parse document");
+    // // Send a test request.
+    // let request = RpcRequest::default()
+    //     .add_headers(
+    //         vec![
+    //             RpcHeader::new(b":method", b"POST"),
+    //             RpcHeader::new(b":scheme", b"http"),
+    //             RpcHeader::new(b":authority", b"localhost"),
+    //             RpcHeader::new(b":path", b"/complex/save_document"),
+    //             RpcHeader::new(b"content-type", b"application/docbuf+rpc"),
+    //             RpcHeader::new(b"user-agent", b"docbuf-rpc-client/0.1.0"),
+    //             RpcHeader::new(b"content-length", &buffer.len().to_string().as_bytes()),
+    //         ]
+    //         .into(),
+    //     )
+    //     .add_body(buffer.clone());
 
-    info!("Document: {doc:?}");
+    // let mut response = client.send(request)?;
 
-    Ok(())
-}
+    // info!("Response: {response:?}");
 
-#[test]
-fn test_rpc_macro() -> Result<(), docbuf_core::error::Error> {
-    use docbuf_core::traits::DocBuf;
-    use docbuf_macros::*;
-    use docbuf_rpc::RpcResult;
+    // let doc = complex::Document::from_docbuf(&mut response.body).expect("Failed to parse document");
 
-    #[docbuf]
-    #[derive(Debug, Serialize, Deserialize)]
-    pub struct Hello {
-        #[docbuf {
-            // Field validation
-            // e.g., Regular expression validation.
-            regex = "^[a-zA-Z ]{1,}$";
-        }]
-        pub name: String,
-    }
-
-    // #[docbuf_rpc]
-    impl Hello {
-        // User-Defined RPC Method Handler
-        fn say_hello<Ctx>(ctx: &Ctx, mut doc: Hello) -> Result<Hello, docbuf_rpc::Error>
-        where
-            Ctx: Send + Sync + 'static,
-        {
-            // Implementation logic defined here.
-            unimplemented!("say hello not implemented");
-        }
-    }
+    // info!("Document: {doc:?}");
 
     Ok(())
 }

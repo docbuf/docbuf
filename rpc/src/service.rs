@@ -34,6 +34,10 @@ where
         }
     }
 
+    pub fn name(&self) -> &RpcServiceName {
+        &self.name
+    }
+
     pub fn add_method(
         mut self,
         method_name: &str,
@@ -41,6 +45,14 @@ where
     ) -> Result<Self, Error> {
         self.inner.insert(method_name.to_owned(), Arc::new(method));
         Ok(self)
+    }
+}
+
+impl<Ctx> std::fmt::Debug for RpcService<Ctx> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RpcService")
+            .field("name", &self.name)
+            .finish()
     }
 }
 

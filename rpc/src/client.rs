@@ -33,7 +33,7 @@ pub struct RpcClient {
 }
 
 impl RpcClient {
-    pub async fn send(&self, request: RpcRequest) -> Result<RpcResponse, Error> {
+    pub fn send(&self, request: RpcRequest) -> Result<RpcResponse, Error> {
         let (req_tx, req_rx) = RpcResponse::oneshot();
 
         info!("Sending request: {request:?}");
