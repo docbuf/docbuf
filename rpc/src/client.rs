@@ -7,10 +7,10 @@ use crate::{
     RpcRequestSender, RpcResponse,
 };
 
-use std::{net::SocketAddr, sync::mpsc::TryRecvError, thread::JoinHandle, time::Duration};
+use std::{net::SocketAddr, sync::mpsc::TryRecvError, thread::JoinHandle};
 use std::{
-    ops::Deref,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::{Receiver, RecvError, Sender},
+    time::Duration,
 };
 
 use mio::{net::UdpSocket, Events, Poll, Token};
@@ -21,12 +21,6 @@ use tracing::{debug, error, info, warn};
 /// Default socket token.
 const DEFAULT_SOCKET: Token = Token(0);
 
-// pub struct RpcClientConnection {
-//     tx_handle:
-//     /// The handle to the inner spawned connection;
-// inner: JoinHandle<()>,
-// }
-
 pub struct RpcClient {
     sender: RpcRequestSender,
     daemon: JoinHandle<Result<(), Error>>,
@@ -34,27 +28,35 @@ pub struct RpcClient {
 
 impl RpcClient {
     pub fn send(&self, request: RpcRequest) -> Result<RpcResponse, Error> {
-        let (req_tx, req_rx) = RpcResponse::oneshot();
+        let sender = self.sender.clone();
+        let response = std::thread::spawn(move || {
+            debug!("Spawning RPC Client Receiver Response Thread");
+            let (req_tx, req_rx) = RpcResponse::oneshot();
 
-        info!("Sending request: {request:?}");
-        self.sender.send((request, req_tx))?;
+            debug!("Sending RPC Client Request");
+            sender.send((request, req_tx))?;
 
-        loop {
-            match req_rx.try_recv() {
-                Ok(response) => {
-                    info!("Received response: {response:?}");
-                    return Ok(response);
-                }
-                Err(TryRecvError::Empty) => {
-                    error!("Received Empty response");
-                    continue;
-                }
-                Err(TryRecvError::Disconnected) => {
-                    error!("Received Disconnected response");
-                    return Err(Error::InternalError);
+            loop {
+                match req_rx.try_recv() {
+                    Ok(response) => {
+                        debug!("Received RPC Client Response.");
+                        return Ok(response);
+                    }
+                    Err(TryRecvError::Empty) => {
+                        // error!("Received Empty response");
+                        continue;
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        error!("Received Disconnected response");
+                        return Err(Error::RpcClientReceiverDisconnected);
+                    }
                 }
             }
-        }
+        });
+
+        response
+            .join()
+            .map_err(|_| Error::RpcClientReceiverThreadFailed)?
     }
 
     fn new_connection_id<'a>(
@@ -138,9 +140,12 @@ impl RpcClient {
         let mut sync_senders = RpcResponse::sync_senders();
 
         let daemon = std::thread::spawn(move || {
-            loop {
-                debug!("Entering Main Loop");
-                queue.poll(&mut events, connection.timeout())?;
+            'main: loop {
+                let timeout = Some(Duration::from_nanos(1));
+                // NOTE: `connection.timeout()` caused the poll
+                // to block for ~5s, using an explicit timeout
+                // to avoid this issue.
+                queue.poll(&mut events, timeout)?;
 
                 // Check for incoming packets
                 'incoming: loop {
@@ -148,10 +153,12 @@ impl RpcClient {
                     if events.is_empty() {
                         connection.timeout();
 
+                        // debug!("No events found");
+
                         break 'incoming;
                     }
 
-                    debug!("Found Event");
+                    // debug!("Found Event");
 
                     let (bytes_received, remote_socket_addr) =
                         match socket.recv_from(&mut input_buffer) {
@@ -204,10 +211,13 @@ impl RpcClient {
                 }
 
                 if let Some(http3_cx) = &mut http3_cx {
+                    debug!("Processing HTTP/3 Requests");
                     // Processing Outgoing Requests to the Server over HTTP/3
                     match req_rx.try_recv() {
-                        Err(e) => {
-                            error!("Error when receiving request: {:?}", e);
+                        Err(TryRecvError::Empty) => {}
+                        Err(TryRecvError::Disconnected) => {
+                            error!("Received Disconnected response");
+                            break;
                         }
                         Ok((mut request, res_tx)) => {
                             debug!("Attempting to Send HTTP/3 Request");
@@ -221,13 +231,21 @@ impl RpcClient {
                                 bodyless,
                             )?;
 
+                            // Set the request stream id.
+                            request.stream_id = stream_id;
+
                             debug!("Sending Request for Stream ID: {stream_id}");
 
                             // Save the response sender for this stream.
-                            sync_senders.insert(request.stream_id, res_tx.to_owned());
+                            sync_senders.insert(request.stream_id, res_tx);
 
                             if let Some(body) = &mut request.body {
-                                match http3_cx.send_body(&mut connection, stream_id, body, false) {
+                                match http3_cx.send_body(
+                                    &mut connection,
+                                    request.stream_id,
+                                    body,
+                                    false,
+                                ) {
                                     Ok(written) => {
                                         info!("Wrote {written} of {content_length} bytes to stream {stream_id}");
                                     }
@@ -247,7 +265,7 @@ impl RpcClient {
                                             TransportErrorCode::InternalError,
                                         )?;
 
-                                        break;
+                                        break 'main;
                                     }
                                 }
                             }
@@ -261,6 +279,7 @@ impl RpcClient {
                         match http3_cx.poll(&mut connection) {
                             Ok((stream_id, quiche::h3::Event::Headers { list, has_body })) => {
                                 debug!("Received headers {list:?} on stream id {stream_id}");
+
                                 if has_body {
                                     // Create a new partial response.
                                     partial_responses
@@ -288,19 +307,19 @@ impl RpcClient {
                                             Ok(read) => {
                                                 partial_response.written += read;
                                                 debug!(
-                                                    "Received {} bytes of response data on stream {}",
-                                                    read, stream_id
+                                                    "Received {} bytes of response data on stream {stream_id}",
+                                                    partial_response.written
                                                 );
                                             }
                                             Err(quiche::h3::Error::Done) => {
-                                                let response = partial_response.into();
+                                                let response: RpcResponse = partial_response.into();
 
-                                                info!("Finished Reading Response: {response:?}");
+                                                info!("Finished Reading Response");
                                                 // No more data to read. Send the response.
                                                 let res_tx = sync_senders
                                                     // Note: if we remove the res_tx, the connection will
                                                     // disconnect. Cleanup after the response is sent.
-                                                    .get_mut(&stream_id)
+                                                    .remove(&stream_id)
                                                     .ok_or(Error::InternalError)?;
 
                                                 info!("Sending Response");
@@ -337,15 +356,19 @@ impl RpcClient {
                                 };
                             }
 
-                            Ok((_stream_id, quiche::h3::Event::Finished)) => {
-                                debug!("HTTP/3 Connection Finished");
+                            Ok((stream_id, quiche::h3::Event::Finished)) => {
+                                warn!("HTTP/3 Stream {stream_id} Finished");
 
-                                close_connection(
-                                    &mut connection,
-                                    TransportErrorCode::ApplicationError(
-                                        "Connection Finished".to_string(),
-                                    ),
-                                )?;
+                                // sync_senders.remove(&stream_id);
+
+                                break;
+
+                                // close_connection(
+                                //     &mut connection,
+                                //     TransportErrorCode::ApplicationError(
+                                //         "Connection Finished".to_string(),
+                                //     ),
+                                // )?;
                             }
 
                             Ok((_stream_id, quiche::h3::Event::Reset(e))) => {
@@ -368,7 +391,7 @@ impl RpcClient {
                             }
 
                             Err(quiche::h3::Error::Done) => {
-                                debug!("{} done processing HTTP/3 events", connection.trace_id());
+                                // debug!("{} done processing HTTP/3 events", connection.trace_id());
                                 break;
                             }
 

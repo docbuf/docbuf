@@ -351,18 +351,18 @@ impl RpcServer<quiche::ConnectionId<'static>, quiche::Connection, quiche::h3::Co
             // Process outgoing quic packets.
             let mut connections = self.connections()?;
             for (connection_id, connection) in connections.iter_mut() {
-                debug!(
-                    "Processing Outgoing Quic Packets for Connection ID: {:?}",
-                    connection_id
-                );
-                loop {
+                // debug!(
+                //     "Processing Outgoing Quic Packets for Connection ID: {:?}",
+                //     connection_id
+                // );
+                'conn: loop {
                     let (bytes_written, recipient) = match connection.inner.send(&mut output_buffer)
                     {
                         Ok(sent) => sent,
 
                         Err(quiche::Error::Done) => {
-                            debug!("{} done writing", connection.inner.trace_id());
-                            break;
+                            // debug!("{} done writing", connection.inner.trace_id());
+                            break 'conn;
                         }
 
                         Err(e) => {
@@ -370,7 +370,7 @@ impl RpcServer<quiche::ConnectionId<'static>, quiche::Connection, quiche::h3::Co
 
                             connection.close(TransportErrorCode::InternalError)?;
 
-                            break;
+                            break 'conn;
                         }
                     };
 
@@ -408,11 +408,11 @@ impl RpcServer<quiche::ConnectionId<'static>, quiche::Connection, quiche::h3::Co
                 }
             }
 
-            // Clean up closed connections.
+            // // Clean up closed connections.
             connections.retain(|_, conn| {
                 // Forget the connection if it is closed.
                 if conn.inner.is_closed() {
-                    debug!("Connection {} closed", conn.inner.trace_id());
+                    warn!("Connection {} closed", conn.inner.trace_id());
 
                     return false;
                 }

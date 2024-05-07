@@ -38,10 +38,7 @@ pub fn docbuf_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr = proc_macro2::TokenStream::from(attr);
     let item = proc_macro2::TokenStream::from(item);
 
-    println!("Attr {attr}");
-    println!("Item {item}");
-
-    rpc::gen_rpc(item, attr)
-        .expect("Failed to parse RPC item")
+    rpc::gen_rpc(attr, item)
+        .expect("Failed to parse RPC item: {item:?}")
         .into()
 }

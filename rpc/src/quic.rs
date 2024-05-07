@@ -80,6 +80,10 @@ impl QuicConfig<quiche::Config> {
         config.set_disable_active_migration(true);
         config.enable_early_data();
 
+        // Set the ACK delay to 0.
+        config.set_ack_delay_exponent(0);
+        config.enable_pacing(false);
+
         Ok(())
     }
 

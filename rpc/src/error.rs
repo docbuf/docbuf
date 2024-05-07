@@ -60,4 +60,8 @@ pub enum Error {
     ResponseTimedOut,
     #[error("Internal Error")]
     InternalError,
+    #[error("RPC Client Receiver Disconnected Without Response")]
+    RpcClientReceiverDisconnected,
+    #[error("RPC Client Response Thread Error")]
+    RpcClientReceiverThreadFailed,
 }

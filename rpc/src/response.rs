@@ -87,6 +87,13 @@ impl PartialRpcResponse {
         self.written += data.len();
         self.body.extend_from_slice(data);
     }
+
+    /// Return the content length of the headers if it exists.
+    pub fn content_length(&self) -> Option<usize> {
+        self.headers
+            .as_ref()
+            .and_then(|headers| headers.content_length())
+    }
 }
 
 pub struct PartialRpcResponses(pub(crate) HashMap<StreamId, PartialRpcResponse>);
@@ -137,7 +144,7 @@ impl RpcResponseSyncSenders {
 impl RpcResponse {
     /// Create a `oneshot` channel for sending and receiving requests.
     pub fn oneshot() -> (RpcResponseSyncSender, RpcResponseReceiver) {
-        sync_channel(1)
+        sync_channel(0)
     }
 
     /// Returns a new map for response sync senders.

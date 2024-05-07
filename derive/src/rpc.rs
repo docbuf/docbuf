@@ -4,7 +4,7 @@ use std::{
 };
 
 use proc_macro2::{token_stream, Ident, Span, TokenStream};
-use proc_macro_error::{abort_call_site, emit_error};
+use proc_macro_error::emit_error;
 use quote::{quote, ToTokens};
 use syn::{ItemImpl, ItemTrait, Signature};
 
@@ -12,6 +12,8 @@ use syn::{ItemImpl, ItemTrait, Signature};
 pub enum RpcOption {
     /// Service name
     Service(String),
+    GenClient(bool),
+    None,
 }
 
 impl<K, V> From<(K, V)> for RpcOption
@@ -22,8 +24,9 @@ where
     fn from((key, value): (K, V)) -> Self {
         match (key.as_ref(), value.as_ref()) {
             ("service", service) => RpcOption::Service(service.to_string()),
+            ("gen_client", val) => RpcOption::GenClient(val == "true"),
             _ => {
-                unimplemented!("Unsupported DocBuf options key: {}", key.as_ref());
+                unimplemented!("Unsupported DocBuf RPC options key: {}", key.as_ref());
             }
         }
     }
@@ -40,13 +43,36 @@ impl RpcOptions {
         self.0.insert(option);
     }
 
+    pub fn gen_client(&self) -> bool {
+        self.iter()
+            .filter_map(|opt| match opt {
+                RpcOption::GenClient(gen) => Some(*gen),
+                _ => None,
+            })
+            .next()
+            // default behavior is to generate the client.
+            .unwrap_or(true)
+    }
+
     // Get the service name from the options
     pub fn service(&self) -> Option<&str> {
         self.iter()
             .filter_map(|opt| match opt {
                 RpcOption::Service(service) => Some(service.as_str()),
+                _ => None,
             })
             .next()
+    }
+
+    /// Set the service name in the options.
+    /// This will overwrite any existing service name.
+    pub fn set_service(&mut self, svc: String) {
+        self.0.retain(|opt| match opt {
+            RpcOption::Service(_) => false,
+            _ => true,
+        });
+
+        self.insert(RpcOption::Service(svc));
     }
 }
 
@@ -151,7 +177,8 @@ fn rpc_function(
     Ok(quote! {
         pub fn #rpc_method_var(
             ctx: #ctx_type,
-            mut req: docbuf_rpc::RpcRequest) -> docbuf_rpc::RpcResult
+            mut req: docbuf_rpc::RpcRequest
+        ) -> docbuf_rpc::RpcResult
         {
             let document = Self::#method(ctx, req.as_docbuf::<#doc_type>()?)?;
 
@@ -174,15 +201,14 @@ fn parse_rpc_service(
     service_name: &str,
     methods: &[Signature],
 ) -> Result<TokenStream, ()> {
+    let service_name = service_name.to_lowercase();
+
     let rpc_methods = methods
         .iter()
         .map(|sig| {
             let method = sig.ident.to_string();
             let rpc_method = format!("rpc_{}", method.to_string()).to_lowercase();
             let rpc_method_var = Ident::new(&rpc_method, Span::call_site());
-
-            let ctx_type = ctx_type.to_token_stream();
-            let doc_type = parse_doc_type(sig)?.to_token_stream();
 
             Ok(quote! {
                 .add_method(#method, Self::#rpc_method_var)?
@@ -211,28 +237,29 @@ fn parse_method_signatures(input: &ItemImpl) -> Vec<Signature> {
         .collect::<Vec<Signature>>()
 }
 
-pub fn gen_rpc(input: TokenStream, attr: TokenStream) -> Result<TokenStream, ()> {
-    let options = RpcOptions::from(&attr);
+pub fn gen_rpc(attr: TokenStream, input: TokenStream) -> Result<TokenStream, ()> {
+    let mut options = RpcOptions::from(&attr);
 
     // Generate the RPC Service if the item is a impl block.
     if let Ok(implementation) = syn::parse2::<ItemImpl>(input.clone()) {
-        let service = gen_rpc_service(implementation)?;
+        let (service, client) = gen_rpc_service_and_client(implementation, &mut options)?;
 
         return Ok(quote! {
             #input
             #service
+            #client
         });
     }
 
     // Generate the RPC Client if the item is a trait block.
     if let Ok(interface) = syn::parse2::<ItemTrait>(input.clone()) {
-        return gen_rpc_client(interface, &options);
+        return gen_rpc_client(interface, &mut options);
     }
 
     panic!("Expected either an `impl` block or a `trait` block.")
 }
 
-pub fn gen_rpc_client(interface: ItemTrait, options: &RpcOptions) -> Result<TokenStream, ()> {
+pub fn gen_rpc_client(interface: ItemTrait, options: &mut RpcOptions) -> Result<TokenStream, ()> {
     // Trait Name
     let trait_name = interface.ident;
 
@@ -288,7 +315,51 @@ pub fn gen_rpc_client(interface: ItemTrait, options: &RpcOptions) -> Result<Toke
     })
 }
 
-pub fn gen_rpc_service(implementation: ItemImpl) -> Result<TokenStream, ()> {
+fn client_function(signature: &syn::Signature) -> Result<TokenStream, ()> {
+    let method = signature.ident.to_token_stream();
+
+    let doc = parse_doc_type(signature)?;
+
+    Ok(quote! {
+        fn #method(
+            client: &docbuf_rpc::RpcClient,
+            doc: #doc
+        ) -> Result<#doc, docbuf_rpc::Error>;
+    })
+}
+
+fn gen_rpc_client_interface(
+    service: &str,
+    signatures: &[Signature],
+    options: &mut RpcOptions,
+) -> Result<TokenStream, ()> {
+    let client_name = format!("{}Client", service.to_string());
+    let client_name = Ident::new(&client_name, Span::call_site());
+
+    let methods = signatures
+        .iter()
+        .map(|sig| client_function(sig))
+        .collect::<Result<Vec<TokenStream>, ()>>()?;
+
+    let trait_def = quote! {
+        pub trait #client_name {
+            #(#methods)*
+        }
+    };
+
+    // Set the service name in the options to the service passed to the method.
+    options.set_service(service.to_lowercase());
+
+    match syn::parse2::<ItemTrait>(trait_def) {
+        Ok(interface) => gen_rpc_client(interface, options),
+        Err(e) => panic!("Expected a trait block for {client_name}: {e:?}."),
+    }
+}
+
+pub fn gen_rpc_service_and_client(
+    implementation: ItemImpl,
+    options: &mut RpcOptions,
+) -> Result<(TokenStream, TokenStream), ()> {
     let signatures = parse_method_signatures(&implementation);
 
     let item_ident = implementation.self_ty.to_token_stream();
@@ -305,8 +376,8 @@ pub fn gen_rpc_service(implementation: ItemImpl) -> Result<TokenStream, ()> {
         })
         .collect::<Result<Vec<TokenStream>, ()>>()?;
 
-    let service_name = format!("{}", item_ident.to_string()).to_lowercase();
-    let service_name = Ident::new(&service_name, Span::call_site());
+    let service_name_string = format!("{}", item_ident.to_string());
+    let service_name = Ident::new(&service_name_string, Span::call_site());
 
     let rpc_service = parse_rpc_service(
         &parse_ctx_type(&signatures[0])?,
@@ -314,11 +385,19 @@ pub fn gen_rpc_service(implementation: ItemImpl) -> Result<TokenStream, ()> {
         &signatures,
     )?;
 
-    Ok(quote! {
+    let service = quote! {
         impl #item_ident {
             #rpc_service
 
             #(#rpc_methods)*
         }
-    })
+    };
+
+    let client = if options.gen_client() {
+        gen_rpc_client_interface(&service_name_string, &signatures, options)?
+    } else {
+        TokenStream::new()
+    };
+
+    Ok((service, client))
 }

@@ -171,7 +171,7 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection> {
 
             match http3_cx.poll(&mut self.inner) {
                 Ok((stream_id, quiche::h3::Event::Headers { list, has_body })) => {
-                    info!("Received HTTP/3 Headers Event");
+                    info!("Received HTTP/3 Headers Event: {list:?}");
 
                     let headers = RpcHeaders::from(list);
 
@@ -255,7 +255,7 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection> {
                 Ok((_goaway_id, quiche::h3::Event::GoAway)) => (),
                 // No remaining work on the connection.
                 Err(quiche::h3::Error::Done) => {
-                    info!("{} HTTP/3 Done", self.inner.trace_id());
+                    info!("{} HTTP/3 Read Requests Done", self.inner.trace_id());
                     break;
                 }
                 Err(e) => {
