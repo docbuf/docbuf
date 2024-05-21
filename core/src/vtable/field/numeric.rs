@@ -196,87 +196,87 @@ impl NumericValue {
     }
 }
 
-impl Into<NumericValue> for u8 {
-    fn into(self) -> NumericValue {
-        NumericValue::U8(self)
+impl From<u8> for NumericValue {
+    fn from(value: u8) -> Self {
+        NumericValue::U8(value)
     }
 }
 
-impl Into<NumericValue> for u16 {
-    fn into(self) -> NumericValue {
-        NumericValue::U16(self)
+impl From<u16> for NumericValue {
+    fn from(value: u16) -> Self {
+        NumericValue::U16(value)
     }
 }
 
-impl Into<NumericValue> for u32 {
-    fn into(self) -> NumericValue {
-        NumericValue::U32(self)
+impl From<u32> for NumericValue {
+    fn from(value: u32) -> Self {
+        NumericValue::U32(value)
     }
 }
 
-impl Into<NumericValue> for u64 {
-    fn into(self) -> NumericValue {
-        NumericValue::U64(self)
+impl From<u64> for NumericValue {
+    fn from(value: u64) -> Self {
+        NumericValue::U64(value)
     }
 }
 
-impl Into<NumericValue> for u128 {
-    fn into(self) -> NumericValue {
-        NumericValue::U128(self)
+impl From<u128> for NumericValue {
+    fn from(value: u128) -> Self {
+        NumericValue::U128(value)
     }
 }
 
-impl Into<NumericValue> for usize {
-    fn into(self) -> NumericValue {
-        NumericValue::USIZE(self)
+impl From<usize> for NumericValue {
+    fn from(value: usize) -> Self {
+        NumericValue::USIZE(value)
     }
 }
 
-impl Into<NumericValue> for f32 {
-    fn into(self) -> NumericValue {
-        NumericValue::F32(self)
+impl From<f32> for NumericValue {
+    fn from(value: f32) -> Self {
+        NumericValue::F32(value)
     }
 }
 
-impl Into<NumericValue> for f64 {
-    fn into(self) -> NumericValue {
-        NumericValue::F64(self)
+impl From<f64> for NumericValue {
+    fn from(value: f64) -> Self {
+        NumericValue::F64(value)
     }
 }
 
-impl Into<NumericValue> for i8 {
-    fn into(self) -> NumericValue {
-        NumericValue::I8(self)
+impl From<i8> for NumericValue {
+    fn from(value: i8) -> Self {
+        NumericValue::I8(value)
     }
 }
 
-impl Into<NumericValue> for i16 {
-    fn into(self) -> NumericValue {
-        NumericValue::I16(self)
+impl From<i16> for NumericValue {
+    fn from(value: i16) -> Self {
+        NumericValue::I16(value)
     }
 }
 
-impl Into<NumericValue> for i32 {
-    fn into(self) -> NumericValue {
-        NumericValue::I32(self)
+impl From<i32> for NumericValue {
+    fn from(value: i32) -> Self {
+        NumericValue::I32(value)
     }
 }
 
-impl Into<NumericValue> for i64 {
-    fn into(self) -> NumericValue {
-        NumericValue::I64(self)
+impl From<i64> for NumericValue {
+    fn from(value: i64) -> Self {
+        NumericValue::I64(value)
     }
 }
 
-impl Into<NumericValue> for i128 {
-    fn into(self) -> NumericValue {
-        NumericValue::I128(self)
+impl From<i128> for NumericValue {
+    fn from(value: i128) -> Self {
+        NumericValue::I128(value)
     }
 }
 
-impl Into<NumericValue> for isize {
-    fn into(self) -> NumericValue {
-        NumericValue::ISIZE(self)
+impl From<isize> for NumericValue {
+    fn from(value: isize) -> Self {
+        NumericValue::ISIZE(value)
     }
 }
 

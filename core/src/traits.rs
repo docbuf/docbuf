@@ -13,6 +13,8 @@ pub trait DocBuf {
     // inner type for the Document Buffer
     type Doc: DocBuf + std::fmt::Debug;
 
+    type DocId: Into<[u8; 16]> + From<[u8; 16]> + std::fmt::Debug;
+
     #[cfg(feature = "uuid")]
     /// Return the Uuid for the document
     ///
@@ -27,7 +29,7 @@ pub trait DocBuf {
     /// ```
     ///
     /// By default, this method will error on unimplemented structs.
-    fn uuid(&self) -> Result<crate::deps::uuid::Uuid, error::Error> {
+    fn uuid(&self) -> Result<Self::DocId, error::Error> {
         Err(error::Error::UuidNotImplemented)
     }
 

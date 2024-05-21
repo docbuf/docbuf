@@ -35,7 +35,7 @@ impl VTableFieldOffset {
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let indexes = &bytes[0..2];
         let range_start = &bytes[2..10];
-        let range_end = &bytes[10..8];
+        let range_end = &bytes[10..18];
 
         Self(
             (
@@ -93,8 +93,19 @@ pub struct VTableFieldOffsets(Vec<VTableFieldOffset>);
 
 impl VTableFieldOffsets {
     #[inline]
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    #[inline]
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    #[inline]
+    /// Length of the document buffer, according based on the last offset end range.
+    pub fn doc_buffer_len(&self) -> usize {
+        self.0.last().map(|offset| offset.1.end).unwrap_or(0)
     }
 
     #[inline]
@@ -117,6 +128,9 @@ impl VTableFieldOffsets {
             offsets.push(offset);
             index += VTABLE_FIELD_OFFSET_SIZE_BYTES;
         }
+
+        // Sort the offsets from start ranges.
+        offsets.sort_by(|a, b| a.1.start.cmp(&b.1.start));
 
         Self(offsets)
     }
@@ -141,6 +155,10 @@ impl VTableFieldOffsets {
                 self.0.push(offset);
             }
         }
+
+        // Ensure the offsets are sorted by the start range
+        // TODO: Optimize this
+        self.0.sort_by(|a, b| a.1.start.cmp(&b.1.start));
     }
 
     #[inline]
@@ -165,6 +183,17 @@ impl VTableFieldOffsets {
                 }
                 VTableFieldOffsetDiff::None => {}
             });
+    }
+
+    pub fn offset(&self, index: VTableFieldOffsetIndex) -> Option<&VTableFieldOffset> {
+        self.0.iter().find(|offset| offset.0 == index)
+    }
+
+    pub fn range(&self, index: VTableFieldOffsetIndex) -> Option<&Range<usize>> {
+        self.0
+            .iter()
+            .find(|offset| offset.0 == index)
+            .map(|offset| &offset.1)
     }
 }
 

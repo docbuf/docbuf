@@ -84,6 +84,17 @@ impl DocBufEncodeField<&[u8]> for VTableField {
         self.rules.validate(data)?;
 
         match &self.r#type {
+            VTableFieldType::Uuid => {
+                let offset_start = buffer.len();
+
+                // Encode the field data
+                buffer.extend_from_slice(data);
+
+                let offset_end = buffer.len();
+
+                // Return the offset of the field data, disregarding the data length
+                Ok(self.as_offset(offset_start..offset_end))
+            }
             VTableFieldType::Bytes => {
                 // prepend length to the field data
                 let data_length = (data.len() as u32).to_le_bytes();

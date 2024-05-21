@@ -1,4 +1,4 @@
-use crate::{Partition, PartitionKey};
+use crate::{Partition, PartitionId, PartitionPermission};
 
 use super::Error;
 
@@ -23,8 +23,6 @@ impl DocBufDbConfig {
     pub fn load(path: impl Into<PathBuf>) -> Result<Self, Error> {
         let path: PathBuf = path.into();
 
-        println!("DocBuf DB Config Path: {:?}", path);
-
         let mut file = File::open(&path)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
@@ -47,14 +45,47 @@ impl DocBufDbConfig {
     pub fn partition_file(
         &self,
         vtable_id: impl Into<VTableId>,
-        partition_key: impl Into<PartitionKey>,
+        partition_id: PartitionId,
+        permission: PartitionPermission,
     ) -> Result<Partition, Error> {
         let id: VTableId = vtable_id.into();
         let vtable = VTable::from_file(self.vtable_file(&id)?)?;
-        let key: PartitionKey = partition_key.into();
         let dir = self.vtable_directory(&id)?;
-        let partition_path = dir.join(format!("{}.dbp", key.as_hex()));
-        Ok(Partition::load(&vtable, partition_path)?)
+        let partition_path = dir.join(format!("{:#x}.dbp", u16::from(&partition_id)));
+        Ok(Partition::load(
+            &vtable,
+            partition_path,
+            partition_id,
+            permission,
+        )?)
+    }
+
+    pub fn vtable_partitions(
+        &self,
+        vtable_id: impl Into<VTableId>,
+    ) -> Result<Vec<Partition>, Error> {
+        let id = vtable_id.into();
+        self.vtable_directory(id.clone())?
+            .read_dir()?
+            .filter_map(|entry| entry.ok())
+            .filter_map(
+                |entry| match entry.path().extension().and_then(|ext| ext.to_str()) {
+                    ext if Some("dbp") == ext => entry
+                        .path()
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .map(|name| {
+                            u16::from_str_radix(&name.replace("0x", ""), 16).map(PartitionId::from)
+                        })
+                        .transpose()
+                        .unwrap_or(None),
+                    _ => None,
+                },
+            )
+            .map(|partition_id| {
+                self.partition_file(id.clone(), partition_id, PartitionPermission::Read)
+            })
+            .collect()
     }
 
     pub fn vtable_directory(&self, vtable_id: impl Into<VTableId>) -> Result<PathBuf, Error> {

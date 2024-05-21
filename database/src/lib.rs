@@ -1,15 +1,15 @@
 pub mod config;
 pub mod lock;
 pub mod manager;
-// pub mod page;
 pub mod partition;
+pub mod predicate;
 pub mod traits;
 
 pub use config::*;
 pub use lock::*;
 pub use manager::*;
-// pub use page::*;
 pub use partition::*;
+pub use predicate::*;
 pub use traits::*;
 
 #[derive(Debug, thiserror::Error)]

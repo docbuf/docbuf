@@ -27,9 +27,9 @@ pub struct Complex(Vec<Document>);
     // Use the sha256 hash algorithm
     // hash = "sha256";
     html = "path/to/html/template.html";
-    // Path to the database configuration file.
+    // Add DocBuf DB trait methods.
     // This will automatically add a `_uuid` field to the document
-    db_config = "/tmp/.docbuf/db/config.toml";
+    db = true;
     // To add a `_uuid` field to the document separately, set:
     // uuid = true;
 }]
@@ -140,7 +140,7 @@ impl PartialEq for Signature {
 impl Document {
     pub fn dummy() -> Self {
         Self {
-            _uuid: Uuid::from_str("b39a7fb6-a2fc-44d7-9446-8f835df29118").unwrap(),
+            _uuid: Uuid::new_v4().to_bytes_le(),
             author: ["A"; 16].concat(),
             title: ["T"; 64].concat(),
             body: ["B"; 2048].concat(),
@@ -318,6 +318,12 @@ fn test_vtable_size() -> Result<(), docbuf_core::error::Error> {
     println!("Offsets: {:?}", offsets);
     println!("Offsets Length: {:?}", offsets.len());
     println!("Offsets bytes length: {:?}", offset_bytes.len());
+
+    assert_eq!(
+        offsets.doc_buffer_len(),
+        buffer.len(),
+        "Offsets length does not match buffer length"
+    );
 
     assert!(vtable.check_offsets(&offset_bytes).is_ok());
     println!("Buffer: {:?}", buffer.len());

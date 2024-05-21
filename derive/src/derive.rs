@@ -51,6 +51,7 @@ pub enum DocBufOpt {
     Hash(HashAlgorithm),
     Html(HtmlTemplatePath),
     UseUuid(bool),
+    UseDb(bool),
     DbConfig(DbConfigPath),
 }
 
@@ -74,6 +75,7 @@ impl DocBufOpts {
     pub fn uuid(&self) -> bool {
         self.0.iter().any(|opt| match opt {
             DocBufOpt::DbConfig(_) => true,
+            DocBufOpt::UseDb(v) => *v,
             DocBufOpt::UseUuid(v) => *v,
             _ => false,
         })
@@ -112,6 +114,7 @@ where
             ("hash", algo) => DocBufOpt::Hash(HashAlgorithm::from(algo)),
             ("html", template) => DocBufOpt::Html(template.to_string()),
             ("uuid", v) => DocBufOpt::UseUuid(v == "true"),
+            ("db", v) => DocBufOpt::UseDb(v == "true"),
             ("db_config", path) => {
                 // unimplemented!("Db Config Path: {:?}", path);
                 DocBufOpt::DbConfig(path.to_string())
@@ -199,6 +202,8 @@ pub fn docbuf_impl(
         impl #lifetimes ::docbuf_core::traits::DocBuf for #name #lifetimes {
             type Doc = Self;
 
+            type DocId = [u8; 16];
+
             // Serialization Methods
             #serialization_methods
 
@@ -254,50 +259,70 @@ pub fn docbuf_impl_db(
             type Db = ::docbuf_db::DocBufDbManager;
 
             /// The predicate type used for querying the database.
-            type Predicate = ();
+            type Predicate = ::docbuf_db::Predicates;
 
             /// Write a document into the database.
             /// This will return the document id.
-            fn db_insert(&self, db: &Self::Db) -> Result<::docbuf_core::deps::uuid::Uuid, ::docbuf_db::Error> {
+            fn db_insert(&self, db: &Self::Db) -> Result<Self::DocId, ::docbuf_db::Error> {
                 use ::docbuf_db::DocBufDbMngr;
 
                 // Setup the vtable for the document.
                 let vtable = Self::vtable()?;
                 db.write_vtable(&vtable)?;
 
-                let partition_key = self.partition_key()?;
-
-                db.insert(self, partition_key)
+                db.insert(self, self.partition_key()?)
             }
 
             /// Return all documents in the database.
-            fn db_all(db: &Self::Db) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
+            fn db_all(
+                db: &Self::Db,
+                partition_key: Option<impl Into<::docbuf_db::PartitionKey>>
+            ) -> Result<impl Iterator<Item = Self::DocId>, ::docbuf_db::Error>
+            {
+                use ::docbuf_db::DocBufDbMngr;
+
+                db.all::<Self::Doc>(partition_key.map(|p| p.into())).map(|ids| ids.into_iter())
             }
 
             /// Read documents in the database given a predicate.
-            fn db_find(db: &Self::Db, predicate: Self::Predicate) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
+            fn db_find(
+                db: &Self::Db,
+                predicate: impl Into<Self::Predicate>,
+                partition_key: Option<impl Into<::docbuf_db::PartitionKey>>
+            ) -> Result<impl Iterator<Item = Self::Doc>, ::docbuf_db::Error>
+            {
+                use ::docbuf_db::DocBufDbMngr;
+
+                db.find::<Self::Doc>(predicate.into(), partition_key.map(|p| p.into()))
             }
 
             /// Get a document from the database.
-            fn db_get(db: &Self::Db, id: ::docbuf_core::deps::uuid::Uuid, partition_key: Option<impl Into<::docbuf_db::PartitionKey>>) -> Result<Self::Doc, ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
-            }
+            fn db_get(
+                db: &Self::Db,
+                id: Self::DocId,
+                partition_key: Option<impl Into<::docbuf_db::PartitionKey>>
+            ) -> Result<Option<Self::Doc>, ::docbuf_db::Error> {
+                use ::docbuf_db::DocBufDbMngr;
 
-            /// Get a document partition from the database.
-            fn db_get_partition(db: &Self::Db, partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<Vec<Self::Doc>, ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
+                let doc = db.get::<Self::Doc>(id, partition_key.map(|p| p.into()))?;
+
+                Ok(doc)
             }
 
             /// Update a document in the database.
             fn db_update(&self, db: &Self::Db) -> Result<(), ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
+                use ::docbuf_db::DocBufDbMngr;
+
+                db.update::<Self::Doc>(self, self.partition_key()?)
             }
 
             /// Delete a document from the database.
             fn db_delete(self, db: &Self::Db) -> Result<Self::Doc, ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
+                use ::docbuf_db::DocBufDbMngr;
+
+                let partition_key = self.partition_key()?;
+
+                db.delete::<Self::Doc>(self, partition_key)
             }
 
             /// Delete a document partition from the database.
@@ -306,8 +331,10 @@ pub fn docbuf_impl_db(
             }
 
             /// Return the number of documents in the database.
-            fn db_count(db: &Self::Db) -> Result<usize, ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
+            fn db_count(db: &Self::Db, partition_key: Option<impl Into<::docbuf_db::PartitionKey>>) -> Result<usize, ::docbuf_db::Error> {
+                use ::docbuf_db::DocBufDbMngr;
+
+                db.count::<Self::Doc>(partition_key.map(|p| p.into()))
             }
 
             /// Return the number of documents in the database given a predicate.
@@ -475,7 +502,7 @@ pub fn docbuf_impl_vtable(
 pub fn docbuf_impl_uuid(options: &DocBufOpts) -> TokenStream {
     if options.uuid() {
         let output = quote! {
-            fn uuid(&self) -> Result<::docbuf_core::deps::uuid::Uuid, ::docbuf_core::error::Error> {
+            fn uuid(&self) -> Result<Self::DocId, ::docbuf_core::error::Error> {
                 Ok(self._uuid)
             }
         };
@@ -587,8 +614,10 @@ pub fn parse_item_fields(item: &TokenStream, options: &DocBufOpts) -> TokenStrea
     let id_field = match options.uuid() {
         true => quote! {
             /// DocBuf Universal Doc ID
-            #[serde(with = "::docbuf_core::deps::uuid::serde::compact")]
-            pub _uuid: ::docbuf_core::deps::uuid::Uuid,
+            // #[serde(with = "::docbuf_core::deps::uuid::serde::compact")]
+            // pub _uuid: ::docbuf_core::deps::uuid::Uuid,
+            #[serde(with = "::docbuf_core::serde::serde_bytes")]
+            pub _uuid: [u8; 16],
         },
         false => quote! {},
     };

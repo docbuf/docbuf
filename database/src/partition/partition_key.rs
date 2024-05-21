@@ -14,7 +14,7 @@ pub struct PartitionKey(pub(crate) [u8; 16]);
 
 impl From<Uuid> for PartitionKey {
     fn from(value: Uuid) -> Self {
-        Self(value.as_bytes().to_owned())
+        Self(value.to_bytes_le())
     }
 }
 

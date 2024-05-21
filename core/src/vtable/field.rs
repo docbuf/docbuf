@@ -180,6 +180,11 @@ impl VTableField {
             rules,
         })
     }
+
+    #[inline]
+    pub fn offset_index(&self) -> VTableFieldOffsetIndex {
+        (self.item_index, self.index)
+    }
 }
 
 impl std::fmt::Display for VTableField {

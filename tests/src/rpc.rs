@@ -69,19 +69,6 @@ impl Hello {
     }
 }
 
-// #[docbuf_rpc {
-//     service = "hello";
-// }]
-// pub trait HelloClient {
-//     // Define an RPC client method interface for the `Hello` service.
-//     fn say_hello(
-//         // provide a reference to the RPC client.
-//         client: &RpcClient,
-//         // provide the request DocBuf document.
-//         doc: Hello,
-//     ) -> Result<Hello, docbuf_rpc::Error>;
-// }
-
 // Compose multiple clients into a single client.
 pub struct TestClient;
 
@@ -147,14 +134,11 @@ async fn test_rpc_client() -> Result<(), Error> {
     options.load_verify_locations_from_file(ROOT_CERTIFICATE)?;
     // options.verify_peer(false);
 
-    // let mut client = RpcClient::bind(Option::<SocketAddr>::None)?;
-
     let server_name = Some("docbuf.com");
 
     let client = RpcClient::connect(server_addr, server_name, Some(quic_config))?;
 
     let doc = complex::Document::dummy();
-
     let response = TestClient::save_document(&client, doc)?;
 
     println!("Document: {response:?}");

@@ -1,4 +1,4 @@
-use crate::{partition_key::PartitionKey, Error};
+use crate::{Error, PartitionId, PartitionKey};
 
 use std::collections::HashSet;
 
@@ -11,33 +11,40 @@ pub trait DocBufDbMngr {
 
     /// Write a document into the database.
     /// This will return the document id.
-    fn insert<D: DocBuf>(
-        &self,
-        doc: &D,
-        partition_key: PartitionKey,
-    ) -> Result<docbuf_core::deps::uuid::Uuid, Error>;
+    fn insert<D: DocBuf>(&self, doc: &D, partition_key: PartitionKey) -> Result<D::DocId, Error>;
 
-    /// Return all documents in the database.
-    fn all<D: DocBuf>(&self, doc: &D) -> Result<Vec<D>, Error>;
+    /// Return all document IDs in the database for a specific DocBuf type. Optionally, provide a partition key
+    /// to search a single partition. If not partition key is provided, returns for all partitions.
+    fn all<D: DocBuf>(
+        &self,
+        partition_key: Option<PartitionKey>,
+    ) -> Result<impl Iterator<Item = D::DocId>, Error>;
 
     /// Read documents in the database given a predicate.
-    fn find<D: DocBuf>(&self, doc: &D, predicate: Self::Predicate) -> Result<Vec<D>, Error>;
+    fn find<D: DocBuf>(
+        &self,
+        predicate: Self::Predicate,
+        partition_key: Option<PartitionKey>,
+    ) -> Result<impl Iterator<Item = D::Doc>, Error>;
 
     /// Get a document from the database.
-    fn get<D: DocBuf>(&self, id: docbuf_core::deps::uuid::Uuid) -> Result<D, Error>;
+    fn get<D: DocBuf>(
+        &self,
+        id: D::DocId,
+        partition_key: Option<PartitionKey>,
+    ) -> Result<Option<<D as DocBuf>::Doc>, Error>;
 
     /// Update a document in the database.
-    fn update<D: DocBuf>(&self, doc: &D) -> Result<(), Error>;
+    fn update<D: DocBuf>(&self, doc: &D, partition_key: PartitionKey) -> Result<(), Error>;
 
     /// Delete a document from the database.
-    fn delete<D: DocBuf>(&self, doc: D) -> Result<D, Error>;
+    fn delete<D: DocBuf>(&self, doc: D, partition_key: PartitionKey) -> Result<D::Doc, Error>;
 
     /// Return the number of documents in the database.
-    fn count<D: DocBuf>(&self, doc: &D) -> Result<usize, Error>;
+    fn count<D: DocBuf>(&self, partition_key: Option<PartitionKey>) -> Result<usize, Error>;
 
     /// Return the number of documents in the database given a predicate.
-    fn count_where(&self, vtable_id: &VTableId, predicate: Self::Predicate)
-        -> Result<usize, Error>;
+    fn count_where<D: DocBuf>(&self, predicate: Self::Predicate) -> Result<usize, Error>;
 
     /// Return the vtable ids for the database.
     fn vtable_ids(&self) -> Result<&HashSet<VTableId>, Error>;
@@ -56,26 +63,29 @@ pub trait DocBufDb: DocBuf {
 
     /// Write a document into the database.
     /// This will return the document id.
-    fn db_insert(&self, db: &Self::Db) -> Result<docbuf_core::deps::uuid::Uuid, Error>;
+    fn db_insert(&self, db: &Self::Db) -> Result<Self::DocId, Error>;
 
     /// Return all documents in the database.
-    fn db_all(db: &Self::Db) -> Result<Vec<Self::Doc>, Error>;
+    /// If a partition key is provided, this method will
+    /// return all documents in the corresponding partition.
+    fn db_all(
+        db: &Self::Db,
+        partition_key: Option<impl Into<PartitionKey>>,
+    ) -> Result<impl Iterator<Item = Self::DocId>, Error>;
 
     /// Read documents in the database given a predicate.
-    fn db_find(db: &Self::Db, predicate: Self::Predicate) -> Result<Vec<Self::Doc>, Error>;
+    fn db_find(
+        db: &Self::Db,
+        predicate: impl Into<Self::Predicate>,
+        partition_key: Option<impl Into<PartitionKey>>,
+    ) -> Result<impl Iterator<Item = Self::Doc>, Error>;
 
     /// Get a document from the database.
     fn db_get(
         db: &Self::Db,
-        id: docbuf_core::deps::uuid::Uuid,
+        id: Self::DocId,
         partition_key: Option<impl Into<PartitionKey>>,
-    ) -> Result<Self::Doc, Error>;
-
-    /// Get all documents in a partition from the database.
-    fn db_get_partition(
-        db: &Self::Db,
-        partition_key: impl Into<PartitionKey>,
-    ) -> Result<Vec<Self::Doc>, Error>;
+    ) -> Result<Option<Self::Doc>, Error>;
 
     /// Update a document in the database.
     fn db_update(&self, db: &Self::Db) -> Result<(), Error>;
@@ -90,7 +100,10 @@ pub trait DocBufDb: DocBuf {
     ) -> Result<(), Error>;
 
     /// Return the number of documents in the database.
-    fn db_count(db: &Self::Db) -> Result<usize, Error>;
+    fn db_count(
+        db: &Self::Db,
+        partition_key: Option<impl Into<PartitionKey>>,
+    ) -> Result<usize, Error>;
 
     /// Return the number of documents in the database given a predicate.
     fn db_count_where(db: &Self::Db, predicate: Self::Predicate) -> Result<usize, Error>;
@@ -124,6 +137,6 @@ pub trait DocBufDb: DocBuf {
     ///
     /// By default, this method uses the uuid as the partition key.
     fn partition_key(&self) -> Result<PartitionKey, Error> {
-        Ok(PartitionKey::from(self.uuid()?))
+        Ok(PartitionKey::from(self.uuid()?.into()))
     }
 }

@@ -418,7 +418,7 @@ impl VTable {
     /// Allocate a re-usable (owned) buffer for for the vtable based on the average size.
     #[inline]
     pub fn alloc_buf(&self) -> Vec<u8> {
-        Vec::with_capacity(self.avg_size())
+        vec![0; self.avg_size() * 2]
     }
 
     #[inline]
@@ -426,6 +426,11 @@ impl VTable {
         // Add 1 to account for the root item offset
         // Substract the number of items to account for the flat array of offsets
         self.num_fields + 1 - self.num_items as u16
+    }
+
+    #[inline]
+    pub fn offset_len(&self) -> usize {
+        self.num_offsets() as usize * VTABLE_FIELD_OFFSET_SIZE_BYTES
     }
 
     #[inline]

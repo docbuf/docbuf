@@ -340,6 +340,7 @@ impl DocBufDecodeField<f64> for VTableField {
 impl DocBufDecodeField<Vec<u8>> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<Vec<u8>, Error> {
         match self.r#type {
+            VTableFieldType::Uuid => Ok(buffer.drain(0..16).collect()),
             VTableFieldType::Bytes => {
                 let length =
                     u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
