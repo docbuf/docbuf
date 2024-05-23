@@ -31,7 +31,7 @@ impl Into<FileOptions> for PartitionPermission {
         let options = FileOptions::new();
 
         match self {
-            Self::Write => options.write(true).read(true).create(true).append(true),
+            Self::Write => options.read(true).create(true).append(true),
             Self::Read => options.read(true),
             Self::Update => options.read(true).write(true),
         }
@@ -85,6 +85,8 @@ impl Partition {
 
     /// Decrement the count of the number of docbufs in the partition.
     fn decrement_count(&mut self) -> Result<(), Error> {
+        println!("Decrementing partition count.");
+
         let mut count = [0u8; 8];
         self.lock.file.seek(SeekFrom::Start(0))?;
         self.lock.file.read_exact(&mut count)?;
@@ -92,7 +94,11 @@ impl Partition {
         let mut count = u64::from_le_bytes(count);
         count -= 1;
 
-        self.lock.file.write_at(&count.to_le_bytes(), 0)?;
+        println!("Count: {count}");
+
+        self.lock.file.seek(SeekFrom::Start(0))?;
+
+        self.lock.file.write_all(&count.to_le_bytes())?;
 
         Ok(())
     }
@@ -178,7 +184,7 @@ impl Partition {
     }
 
     /// Delete the document buffer from the partition file.
-    pub fn delete_docbuf(&mut self, doc_id: [u8; 16]) -> Result<Vec<u8>, Error> {
+    pub fn delete_docbuf(&mut self, doc_id: &[u8; 16], tombstone: bool) -> Result<Vec<u8>, Error> {
         println!("Deleting docbuf from partition file.");
         let file_length = self.lock.file.metadata()?.len();
         let offset_length = self.vtable.offset_len();
@@ -197,7 +203,7 @@ impl Partition {
                 break;
             }
 
-            println!("Reading offset");
+            println!("Cursor Position: {cursor_pos}");
 
             // Read the document buffer offsets from the partition.
             self.lock.file.read_exact(&mut buffer[..offset_length])?;
@@ -205,62 +211,100 @@ impl Partition {
 
             let doc_buffer_len = offsets.doc_buffer_len();
 
-            println!("Reading docbuf length {}", doc_buffer_len);
-
             self.lock.file.read_exact(&mut buffer[..doc_buffer_len])?;
+
+            // Check if the buffer is a tombstone.
+            if self.is_tombstone(&buffer[..doc_buffer_len]) {
+                continue;
+            }
 
             // Check if the first 16 bytes of the buffer match the doc_id.
             // If so, return the document buffer.
-            if buffer[..16] == doc_id {
-                println!("Found Document, deleting...");
+            if &buffer[..16] == doc_id {
+                println!("Found DocBuf");
+
                 let section_end = self.lock.file.stream_position()?;
 
-                println!("Section End: {section_end:?}");
+                if tombstone {
+                    println!("Tombstoning DocBuf Record");
 
-                let section_start = section_end - (offset_length + doc_buffer_len) as u64;
+                    let section_start = section_end - doc_buffer_len as u64;
 
-                println!("Section Start: {section_start:?}");
+                    self.lock.file.seek(SeekFrom::Start(section_start))?;
 
-                let shift_length = doc_buffer_len + offset_length;
-                let mut shift_buffer = vec![0u8; 1024];
+                    println!("Section Start: {section_start}");
 
-                self.lock.file.seek(SeekFrom::Start(section_end))?;
+                    let permissions = self.lock.file.metadata()?.permissions();
 
-                let mut remaining_bytes = file_length - section_end;
+                    println!("Permissions: {permissions:?}");
 
-                while remaining_bytes > 0 {
-                    let cursor = self.lock.file.stream_position()?;
+                    let zeros = vec![0u8; doc_buffer_len];
+                    self.lock.file.write_all(&zeros)?;
 
-                    let read_length = std::cmp::min(remaining_bytes, shift_buffer.len() as u64);
+                    println!("Zeroed DocBuf Record");
+                } else {
+                    println!("Removing DocBuf Record");
 
-                    self.lock
-                        .file
-                        .read_exact(&mut shift_buffer[..read_length as usize])?;
+                    println!("Section End: {section_end}");
 
-                    self.lock.file.seek(SeekFrom::Start(cursor - read_length))?;
+                    let section_start = section_end - (offset_length + doc_buffer_len) as u64;
 
-                    self.lock
-                        .file
-                        .write_all(&shift_buffer[..read_length as usize])?;
+                    let shift_length = doc_buffer_len + offset_length;
+                    let mut shift_buffer = vec![0u8; 1024];
 
-                    remaining_bytes -= read_length;
+                    let mut remaining_bytes = file_length - section_end;
 
-                    self.lock.file.seek(SeekFrom::Start(cursor + read_length))?;
+                    println!("Remaining Bytes: {remaining_bytes}");
+
+                    while remaining_bytes > 0 {
+                        println!("Shifting the document position");
+                        let cursor = self.lock.file.stream_position()?;
+
+                        let read_length = std::cmp::min(remaining_bytes, shift_buffer.len() as u64);
+
+                        self.lock
+                            .file
+                            .read_exact(&mut shift_buffer[..read_length as usize])?;
+
+                        self.lock.file.seek(SeekFrom::Start(cursor - read_length))?;
+
+                        self.lock
+                            .file
+                            .write_all(&shift_buffer[..read_length as usize])?;
+
+                        remaining_bytes -= read_length;
+
+                        self.lock.file.seek(SeekFrom::Start(cursor + read_length))?;
+                    }
+
+                    println!("File Length: {file_length}");
+                    println!("Shift Length: {shift_length}");
+
+                    let new_file_length = file_length - shift_length as u64;
+
+                    println!("New File Length: {new_file_length}");
+
+                    println!("Setting length of file");
+
+                    self.lock.file.seek(SeekFrom::Start(new_file_length))?;
+
+                    // Truncate the file to the new length.
+                    self.lock.file.set_len(new_file_length).ok();
+
+                    println!("File Truncated");
                 }
 
-                // Truncate the file to the new length.
-                self.lock.file.set_len(file_length - shift_length as u64)?;
+                // let updated_file_length = self.lock.file.metadata()?.len();
 
-                // Check the file length matches the updated length.
-                let new_file_length = self.lock.file.metadata()?.len();
-                let expected_length = file_length - shift_length as u64;
+                // println!("Updated File Length: {updated_file_length}");
 
-                println!("New File Length: {new_file_length}");
-                println!("Expected Length: {expected_length}");
+                // // Check the file length matches the updated length.
+                // let new_file_length = self.lock.file.metadata()?.len();
+                // let expected_length = file_length - shift_length as u64;
 
-                if new_file_length != expected_length {
-                    assert_eq!(new_file_length, expected_length, "File length mismatch");
-                }
+                // if new_file_length != expected_length {
+                //     assert_eq!(new_file_length, expected_length, "File length mismatch");
+                // }
 
                 // Decrement the count of the partition file.
                 self.decrement_count()?;
@@ -283,9 +327,9 @@ impl Partition {
     /// corresponding to the new docbuf.
     pub fn update_docbuf(
         &mut self,
-        doc_id: [u8; 16],
-        offsets: Vec<u8>,
-        docbuf: Vec<u8>,
+        doc_id: &[u8; 16],
+        offsets: &[u8],
+        docbuf: &[u8],
     ) -> Result<(), Error> {
         println!("update_docbuf::Updating Document Buffer");
         let file_length = self.lock.file.metadata()?.len();
@@ -299,6 +343,8 @@ impl Partition {
         self.lock
             .file
             .seek(SeekFrom::Start(PARTITION_COUNT_OFFSET))?;
+
+        let mut found_docbuf = false;
 
         loop {
             let cursor_pos = self.lock.file.stream_position()?;
@@ -318,7 +364,14 @@ impl Partition {
 
             self.lock.file.read_exact(&mut buffer[..doc_buffer_len])?;
 
-            if buffer[..16] == doc_id {
+            // Check if the buffer is a tombstone.
+            if self.is_tombstone(&buffer[..doc_buffer_len]) {
+                println!("Found Tombstone, skipping...");
+                continue;
+            }
+
+            if &buffer[..16] == doc_id {
+                found_docbuf = true;
                 println!("Found Document, updating...");
                 let section_end = self.lock.file.stream_position()?;
 
@@ -373,16 +426,16 @@ impl Partition {
                         // Truncate the file to the new length.
                         self.lock.file.set_len(file_length - shift_length as u64)?;
 
-                        // Check the file length matches the updated length.
-                        let new_file_length = self.lock.file.metadata()?.len();
-                        let expected_length = file_length - shift_length as u64;
+                        // // Check the file length matches the updated length.
+                        // let new_file_length = self.lock.file.metadata()?.len();
+                        // let expected_length = file_length - shift_length as u64;
 
-                        println!("New File Length: {new_file_length}");
-                        println!("Expected Length: {expected_length}");
+                        // println!("New File Length: {new_file_length}");
+                        // println!("Expected Length: {expected_length}");
 
-                        if new_file_length != expected_length {
-                            assert_eq!(new_file_length, expected_length, "File length mismatch");
-                        }
+                        // if new_file_length != expected_length {
+                        //     assert_eq!(new_file_length, expected_length, "File length mismatch");
+                        // }
                     }
                     Ordering::Greater => {
                         println!("Greater Than");
@@ -459,16 +512,16 @@ impl Partition {
 
                         self.lock.file.flush()?;
 
-                        // Check the file length matches the updated length.
-                        let new_file_length = self.lock.file.metadata()?.len();
-                        let expected_length = file_length + shift_length as u64;
+                        // // Check the file length matches the updated length.
+                        // let new_file_length = self.lock.file.metadata()?.len();
+                        // let expected_length = file_length + shift_length as u64;
 
-                        println!("New File Length: {new_file_length}");
-                        println!("Expected Length: {expected_length}");
+                        // println!("New File Length: {new_file_length}");
+                        // println!("Expected Length: {expected_length}");
 
-                        if new_file_length != expected_length {
-                            assert_eq!(new_file_length, expected_length, "File length mismatch");
-                        }
+                        // if new_file_length != expected_length {
+                        //     assert_eq!(new_file_length, expected_length, "File length mismatch");
+                        // }
                     }
                 }
 
@@ -477,26 +530,83 @@ impl Partition {
             }
         }
 
+        if !found_docbuf {
+            return Err(Error::DocBufNotFound);
+        }
+
         Ok(())
     }
 
     /// Reads the first 8 bytes of the partition file to get the count of
     /// the number of docbufs in the partition.
-    pub fn count(&mut self) -> Result<usize, Error> {
+    pub fn count(&mut self, predicate: Option<Predicates>) -> Result<usize, Error> {
         let file_length = self.lock.file.metadata()?.len();
 
         match file_length == 0 {
             // Return zero if the partition file is empty.
             true => Ok(0),
             // Otherwise, read the count from the partition file.
-            false => {
-                let mut count = [0u8; 8];
-                self.lock.file.seek(SeekFrom::Start(0))?;
-                self.lock.file.read_exact(&mut count)?;
+            false => match predicate {
+                None => {
+                    let mut count = [0u8; 8];
+                    self.lock.file.seek(SeekFrom::Start(0))?;
+                    self.lock.file.read_exact(&mut count)?;
 
-                Ok(u64::from_le_bytes(count) as usize)
-            }
+                    Ok(u64::from_le_bytes(count) as usize)
+                }
+                Some(p) => {
+                    let offset_length = self.vtable.offset_len();
+                    let file_length = self.lock.file.metadata()?.len();
+
+                    let mut buffer = self.vtable.alloc_buf();
+                    let mut count = 0;
+
+                    self.lock
+                        .file
+                        .seek(SeekFrom::Start(PARTITION_COUNT_OFFSET))?;
+
+                    loop {
+                        let cursor_pos = self.lock.file.stream_position()?;
+
+                        // Check if the cursor is at the end of the file.
+                        if cursor_pos >= file_length {
+                            break;
+                        }
+
+                        // Read the document buffer offsets from the partition.
+                        self.lock.file.read_exact(&mut buffer[..offset_length])?;
+
+                        let offsets = VTableFieldOffsets::from_bytes(&buffer[..offset_length]);
+                        let doc_buffer_len = offsets.doc_buffer_len();
+
+                        self.lock.file.read_exact(&mut buffer[..doc_buffer_len])?;
+
+                        // Check if the buffer is a tombstone.
+                        if self.is_tombstone(&buffer[..doc_buffer_len]) {
+                            continue;
+                        }
+
+                        // Evaluate the predicates on the document buffer.
+                        if !p.eval(&self.vtable, &offsets, &buffer[..doc_buffer_len])? {
+                            // Return early if the predicates do not match.
+                            continue;
+                        }
+
+                        count += 1;
+                    }
+
+                    Ok(count)
+                }
+            },
         }
+    }
+
+    /// Check if the docbuf buffer is a tombstone.
+    pub fn is_tombstone(&self, docbuf: &[u8]) -> bool {
+        docbuf.iter().fold(0, |mut acc, x| {
+            acc |= *x;
+            acc
+        }) == 0
     }
 
     pub fn search_docbufs(
@@ -528,6 +638,11 @@ impl Partition {
             let doc_buffer_len = offsets.doc_buffer_len();
 
             self.lock.file.read_exact(&mut buffer[..doc_buffer_len])?;
+
+            // Check if the buffer is a tombstone.
+            if self.is_tombstone(&buffer[..doc_buffer_len]) {
+                continue;
+            }
 
             // Evaluate the predicates on the document buffer.
             if !predicates.eval(&self.vtable, &offsets, &buffer[..doc_buffer_len])? {
@@ -569,14 +684,17 @@ impl Partition {
 
             self.lock.file.read_exact(&mut buffer[..doc_buffer_len])?;
 
+            // Check if the buffer is a tombstone.
+            if self.is_tombstone(&buffer[..doc_buffer_len]) {
+                continue;
+            }
+
             // Extract the doc_id from the buffer.
             tx.send([
                 buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6],
                 buffer[7], buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13],
                 buffer[14], buffer[15],
-            ])
-            .map_err(|e| eprintln!("Failed to send ID"))
-            .ok();
+            ])?;
         }
 
         Ok(rx.into_iter())

@@ -5,6 +5,8 @@ pub mod partition;
 pub mod predicate;
 pub mod traits;
 
+use std::sync::mpsc::SendError;
+
 pub use config::*;
 pub use lock::*;
 pub use manager::*;
@@ -40,4 +42,8 @@ pub enum Error {
     VTable(#[from] docbuf_core::vtable::Error),
     // #[error("Max pages reached for vtable: {0}")]
     // MaxPagesReached(VTableIdAsHex),
+    #[error("DocBuf Not Found")]
+    DocBufNotFound,
+    #[error(transparent)]
+    SendError(#[from] SendError<[u8; 16]>),
 }

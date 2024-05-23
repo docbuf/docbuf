@@ -2,7 +2,12 @@ use crate::{Partition, PartitionId, PartitionPermission};
 
 use super::Error;
 
-use std::{fs::File, io::Read, path::PathBuf, str::FromStr};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use docbuf_core::vtable::{VTable, VTableId};
 use serde::{Deserialize, Serialize};
@@ -17,9 +22,25 @@ pub const DEFAULT_DB_DIRECTORY: &str = "/tmp/.docbuf/db/";
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct DocBufDbConfig {
     directory: Option<PathBuf>,
+    tombstone: Option<bool>,
 }
 
 impl DocBufDbConfig {
+    /// Set the tombstone option for the database.
+    /// If set to true, deleted docbuf records will be tombstoned,
+    /// which will zero out the data, instead of removing the record from the database.
+    pub fn set_tombstone(mut self, tombstone: bool) -> Self {
+        self.tombstone = Some(tombstone);
+
+        self
+    }
+
+    /// Returns whether the deleted docbuf record should be removed or tombstoned.
+    /// By default, records are not tombstoned.
+    pub fn tombstone(&self) -> bool {
+        self.tombstone.unwrap_or(false)
+    }
+
     pub fn load(path: impl Into<PathBuf>) -> Result<Self, Error> {
         let path: PathBuf = path.into();
 
@@ -51,7 +72,7 @@ impl DocBufDbConfig {
         let id: VTableId = vtable_id.into();
         let vtable = VTable::from_file(self.vtable_file(&id)?)?;
         let dir = self.vtable_directory(&id)?;
-        let partition_path = dir.join(format!("{:#x}.dbp", u16::from(&partition_id)));
+        let partition_path = dir.join(format!("{}.dbp", partition_id.as_hex()));
         Ok(Partition::load(
             &vtable,
             partition_path,
@@ -153,6 +174,33 @@ impl DocBufDbConfig {
     pub fn read_vtable(&self, vtable_id: impl Into<VTableId>) -> Result<VTable, Error> {
         let id: VTableId = vtable_id.into();
         Ok(VTable::from_file(self.vtable_file(id)?)?)
+    }
+
+    /// List all the VTable IDs in the database.
+    pub fn vtable_ids(&self) -> Result<Vec<VTableId>, Error> {
+        let ids = self
+            .vtable_dir()?
+            .read_dir()?
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| {
+                entry
+                    .path()
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .map(|name| VTableId::from_hex(name).ok())
+                    .unwrap_or(None)
+            })
+            .collect();
+
+        Ok(ids)
+    }
+
+    /// Save the configuration to the file system.
+    pub fn save(&self, path: impl Into<PathBuf>) -> Result<(), Error> {
+        let path: PathBuf = path.into();
+        let mut file = File::create(&path)?;
+        file.write_all(toml::to_string(self)?.as_bytes())?;
+        Ok(())
     }
 }
 

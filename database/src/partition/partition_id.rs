@@ -5,6 +5,12 @@ use super::*;
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct PartitionId(u16);
 
+impl PartitionId {
+    pub fn as_hex(&self) -> String {
+        format!("{:#x}", self.0)
+    }
+}
+
 impl AsRef<u16> for PartitionId {
     fn as_ref(&self) -> &u16 {
         &self.0

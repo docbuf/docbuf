@@ -41,13 +41,14 @@ pub trait DocBufDbMngr {
     fn delete<D: DocBuf>(&self, doc: D, partition_key: PartitionKey) -> Result<D::Doc, Error>;
 
     /// Return the number of documents in the database.
-    fn count<D: DocBuf>(&self, partition_key: Option<PartitionKey>) -> Result<usize, Error>;
-
-    /// Return the number of documents in the database given a predicate.
-    fn count_where<D: DocBuf>(&self, predicate: Self::Predicate) -> Result<usize, Error>;
+    fn count<D: DocBuf>(
+        &self,
+        predicate: Option<Self::Predicate>,
+        partition_key: Option<PartitionKey>,
+    ) -> Result<usize, Error>;
 
     /// Return the vtable ids for the database.
-    fn vtable_ids(&self) -> Result<&HashSet<VTableId>, Error>;
+    fn vtable_ids(&self) -> Result<Vec<VTableId>, Error>;
 }
 
 /// DocBufDb is a trait used to interact with the DocBufDataBase for DocBuf documents.
@@ -93,12 +94,6 @@ pub trait DocBufDb: DocBuf {
     /// Delete a document from the database.
     fn db_delete(self, db: &Self::Db) -> Result<Self::Doc, Error>;
 
-    /// Delete a document partition from the database.
-    fn db_delete_partition(
-        db: &Self::Db,
-        partition_key: impl Into<PartitionKey>,
-    ) -> Result<(), Error>;
-
     /// Return the number of documents in the database.
     fn db_count(
         db: &Self::Db,
@@ -106,12 +101,10 @@ pub trait DocBufDb: DocBuf {
     ) -> Result<usize, Error>;
 
     /// Return the number of documents in the database given a predicate.
-    fn db_count_where(db: &Self::Db, predicate: Self::Predicate) -> Result<usize, Error>;
-
-    /// Return the number of documents in the database given a partition key.
-    fn db_count_partition(
+    fn db_count_where(
         db: &Self::Db,
-        partition_key: impl Into<PartitionKey>,
+        predicate: impl Into<Self::Predicate>,
+        partition_key: Option<impl Into<PartitionKey>>,
     ) -> Result<usize, Error>;
 
     /// Return the database partition key for the document.

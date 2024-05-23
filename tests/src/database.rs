@@ -10,7 +10,13 @@ use docbuf_db::Predicates;
 
 #[test]
 fn test_complex_db() -> Result<(), docbuf_db::Error> {
-    let db = DocBufDbManager::from_config("/tmp/.docbuf/db/config.toml")?;
+    let mut db = DocBufDbManager::from_config("/tmp/.docbuf/db/config.toml")?;
+
+    // Set the tombstone flag to true.
+    // This will zero out the data when a document is deleted,
+    // instead of removing the document from the database,
+    // and truncating the partition file.
+    db.config = db.config.set_tombstone(true);
 
     let mut doc = Document::dummy();
 
@@ -69,21 +75,51 @@ fn test_complex_db() -> Result<(), docbuf_db::Error> {
 
     println!("Predicate: {predicates:?}");
 
-    let mut doc_iter = Document::db_find(&db, predicates, None::<PartitionKey>)?;
+    let mut doc_iter = Document::db_find(&db, predicates.clone(), None::<PartitionKey>)?;
 
+    let mut count = 0;
     while let Some(doc) = doc_iter.next() {
         println!("Found Document ID: {:?}", doc.uuid()?);
+        count += 1;
     }
+
+    let count_where = Document::db_count_where(&db, predicates, None::<PartitionKey>)?;
+
+    assert_eq!(count, count_where);
 
     // Update the author field of the document.
     doc.body = ['B'; 2048 / 2].iter().collect::<String>();
+
+    // Update the document.
     doc.db_update(&db)?;
 
-    let doc_3 = Document::db_get(&db, id, partition_key)?.expect("failed to get document");
+    println!("Updated Document Body");
+
+    let previous_partition_key = doc.partition_key()?;
+
+    // Update the document's partition key field.
+    doc.author = ['A'; 100].iter().collect::<String>();
+
+    println!("Updating Author");
+
+    // Update the document.
+    doc.db_update(&db)?;
+
+    // Assert the partition key has changed, after the author has been updated.
+    // This is because the partition key is derived from the author field,
+    // as specified in the DocBuf annotations.
+    assert_ne!(*previous_partition_key, *doc.partition_key()?);
+
+    println!("Updated Document Author");
+
+    let doc_3 =
+        Document::db_get(&db, id, doc.partition_key().ok())?.expect("failed to get document");
 
     assert_eq!(doc_3.body, doc.body);
 
     let count = Document::db_count(&db, None::<PartitionKey>)?;
+
+    println!("Count: {count}");
 
     // Delete the document.
     let doc_4 = doc.db_delete(&db)?;
@@ -93,6 +129,14 @@ fn test_complex_db() -> Result<(), docbuf_db::Error> {
     let count_2 = Document::db_count(&db, None::<PartitionKey>)?;
 
     assert_eq!(count_2, count - 1);
+
+    assert!(Document::db_get(&db, id, doc_4.partition_key().ok())?.is_none());
+
+    let vtable_ids = db.vtable_ids()?;
+
+    for id in vtable_ids {
+        println!("VTable: {id:?}");
+    }
 
     Ok(())
 }

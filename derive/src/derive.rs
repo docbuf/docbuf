@@ -325,29 +325,24 @@ pub fn docbuf_impl_db(
                 db.delete::<Self::Doc>(self, partition_key)
             }
 
-            /// Delete a document partition from the database.
-            fn db_delete_partition(db: &Self::Db, partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<(), ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
-            }
-
             /// Return the number of documents in the database.
             fn db_count(db: &Self::Db, partition_key: Option<impl Into<::docbuf_db::PartitionKey>>) -> Result<usize, ::docbuf_db::Error> {
                 use ::docbuf_db::DocBufDbMngr;
 
-                db.count::<Self::Doc>(partition_key.map(|p| p.into()))
+                db.count::<Self::Doc>(None, partition_key.map(|p| p.into()))
             }
 
             /// Return the number of documents in the database given a predicate.
             fn db_count_where(
                 db: &Self::Db,
-                predicate: Self::Predicate,
+                predicate: impl Into<Self::Predicate>,
+                partition_key: Option<impl Into<::docbuf_db::PartitionKey>>
             ) -> Result<usize, ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
-            }
+                use ::docbuf_db::DocBufDbMngr;
 
-            /// Return the number of documents in the database given a partition key.
-            fn db_count_partition(db: &Self::Db, partition_key: impl Into<::docbuf_db::PartitionKey>) -> Result<usize, ::docbuf_db::Error> {
-                unimplemented!("DocBufDb method not implemented")
+                let predicate = Some(predicate.into());
+
+                db.count::<Self::Doc>(predicate, partition_key.map(|p| p.into()))
             }
 
             #partition_key
