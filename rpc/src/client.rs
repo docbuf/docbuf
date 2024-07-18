@@ -21,6 +21,7 @@ use tracing::{debug, error, info, warn};
 /// Default socket token.
 const DEFAULT_SOCKET: Token = Token(0);
 
+#[derive(Debug)]
 pub struct RpcClient {
     sender: RpcRequestSender,
     daemon: JoinHandle<Result<(), Error>>,

@@ -6,7 +6,7 @@ use std::{
 use proc_macro2::{token_stream, Ident, Span, TokenStream};
 use proc_macro_error::emit_error;
 use quote::{quote, ToTokens};
-use syn::{ItemImpl, ItemTrait, Signature};
+use syn::{ItemImpl, ItemTrait, Signature, Type};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum RpcOption {
@@ -162,6 +162,36 @@ fn parse_doc_type(signature: &syn::Signature) -> Result<syn::Type, ()> {
     }
 }
 
+/// Parse the return doc type from the method signature.
+/// Removes the Result wrapper, and returns the inner Ok type.
+fn parse_return_type(signature: &syn::Signature) -> Result<syn::Type, ()> {
+    match &signature.output {
+        syn::ReturnType::Type(_, ty) => match ty.as_ref() {
+            syn::Type::Path(path) => {
+                let segment = path.path.segments.first().unwrap();
+                let ty = &segment.ident;
+
+                if ty == "Result" {
+                    let inner = &segment.arguments;
+                    if let syn::PathArguments::AngleBracketed(args) = inner {
+                        let inner = args.args.first().unwrap();
+                        if let syn::GenericArgument::Type(ty) = inner {
+                            return Ok(ty.to_owned());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+
+    Err(emit_error!(
+        signature,
+        "Expected return type to be a `Result` type."
+    ))
+}
+
 fn rpc_function(
     signature: &syn::Signature,
     ctx: &syn::Type,
@@ -217,7 +247,7 @@ fn parse_rpc_service(
         .collect::<Result<Vec<TokenStream>, ()>>()?;
 
     Ok(quote! {
-        pub fn rpc_service() -> Result<docbuf_rpc::RpcService<#ctx_type>, Error>
+        pub fn rpc_service() -> Result<::docbuf_rpc::RpcService<#ctx_type>, ::docbuf_rpc::Status>
             {
                 Ok(docbuf_rpc::RpcService::new(#service_name)
                     #(#rpc_methods)*)
@@ -237,17 +267,39 @@ fn parse_method_signatures(input: &ItemImpl) -> Vec<Signature> {
         .collect::<Vec<Signature>>()
 }
 
+fn parse_impl_name(input: &TokenStream) -> Result<TokenStream, ()> {
+    match syn::parse2::<ItemImpl>(input.clone()) {
+        Ok(impl_block) => Ok(impl_block.self_ty.to_token_stream()),
+        _ => Err(emit_error!(input, "Expected an `impl` block.")),
+    }
+}
+
+fn parse_client_name(input: &TokenStream) -> Result<TokenStream, ()> {
+    match syn::parse2::<ItemTrait>(input.clone()) {
+        Ok(trait_block) => Ok(trait_block.ident.to_token_stream()),
+        _ => Err(emit_error!(input, "Expected a `trait` block.")),
+    }
+}
+
 pub fn gen_rpc(attr: TokenStream, input: TokenStream) -> Result<TokenStream, ()> {
     let mut options = RpcOptions::from(&attr);
+
+    // Parse the item implementation name
+    let input_name = parse_impl_name(&input)?;
 
     // Generate the RPC Service if the item is a impl block.
     if let Ok(implementation) = syn::parse2::<ItemImpl>(input.clone()) {
         let (service, client) = gen_rpc_service_and_client(implementation, &mut options)?;
 
+        let client_name = parse_client_name(&client)?;
+
         return Ok(quote! {
             #input
             #service
             #client
+
+            impl #client_name for #input_name {}
+
         });
     }
 
@@ -272,8 +324,8 @@ pub fn gen_rpc_client(interface: ItemTrait, options: &mut RpcOptions) -> Result<
         })
         .map(|f| {
             let sig = &f.sig;
-
-            let doc_type = parse_doc_type(sig)?;
+            let request_type = parse_doc_type(sig)?;
+            let response_type = parse_return_type(sig)?;
             let service = options.service().unwrap_or_else(|| {
                 panic!(
                     r#"RPC `service` name must be provided. E.g.,
@@ -287,7 +339,7 @@ pub fn gen_rpc_client(interface: ItemTrait, options: &mut RpcOptions) -> Result<
 
             Ok(quote! {
                 #sig {
-                    let mut buffer = #doc_type::vtable()?.alloc_buf();
+                    let mut buffer = #request_type::vtable()?.alloc_buf();
                     doc.to_docbuf(&mut buffer)?;
 
                     let headers = docbuf_rpc::RpcHeaders::default()
@@ -300,7 +352,7 @@ pub fn gen_rpc_client(interface: ItemTrait, options: &mut RpcOptions) -> Result<
 
                     let mut response = client.send(request)?;
 
-                    let doc = #doc_type::from_docbuf(&mut response.body)?;
+                    let doc = #response_type::from_docbuf(&mut response.body)?;
 
                     Ok(doc)
                 }
@@ -318,13 +370,14 @@ pub fn gen_rpc_client(interface: ItemTrait, options: &mut RpcOptions) -> Result<
 fn client_function(signature: &syn::Signature) -> Result<TokenStream, ()> {
     let method = signature.ident.to_token_stream();
 
-    let doc = parse_doc_type(signature)?;
+    let request = parse_doc_type(signature)?;
+    let response = parse_return_type(signature)?;
 
     Ok(quote! {
         fn #method(
             client: &docbuf_rpc::RpcClient,
-            doc: #doc
-        ) -> Result<#doc, docbuf_rpc::Error>;
+            doc: #request
+        ) -> Result<#response, docbuf_rpc::Error>;
     })
 }
 

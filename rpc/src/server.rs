@@ -94,7 +94,7 @@ impl RpcServer<quiche::ConnectionId<'static>, quiche::Connection, quiche::h3::Co
         let request_processor = std::thread::spawn(move || {
             // Wait for incoming requests.
             while let Ok((request, res_tx)) = req_rx.recv() {
-                info!("Processing Request: {:?}", request);
+                info!("Processing Request: {:?}", request.headers);
 
                 // Get the service and method name from the request.
                 let service_name = request.headers.service()?;
@@ -172,7 +172,7 @@ impl RpcServer<quiche::ConnectionId<'static>, quiche::Connection, quiche::h3::Co
 
                 let packet_buffer = &mut input_buffer[..bytes_received];
 
-                debug!("Packet Buffer: {:?}", packet_buffer);
+                // debug!("Packet Buffer: {:?}", packet_buffer);
 
                 let quic_header =
                     match quiche::Header::from_slice(packet_buffer, quiche::MAX_CONN_ID_LEN) {

@@ -5,6 +5,7 @@ use super::Error;
 use std::{
     fs::File,
     io::{Read, Write},
+    net::SocketAddr,
     path::PathBuf,
     str::FromStr,
 };
@@ -16,16 +17,35 @@ use serde::{Deserialize, Serialize};
 /// This value is used if the directory is not specified in the configuration file.
 pub const DEFAULT_DB_DIRECTORY: &str = "/tmp/.docbuf/db/";
 
-// vtables/:vtable_id/pages/:page_id.dbp;
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct DocBufDbRpcConfig {
+    pub server: Option<SocketAddr>,
+    pub priv_key: Option<PathBuf>,
+    pub cert_chain: Option<PathBuf>,
+    pub root_cert: Option<PathBuf>,
+}
 
 /// Options for the DocBufDbManager
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct DocBufDbConfig {
-    directory: Option<PathBuf>,
-    tombstone: Option<bool>,
+    pub directory: Option<PathBuf>,
+    pub tombstone: Option<bool>,
+    pub rpc: Option<DocBufDbRpcConfig>,
 }
 
 impl DocBufDbConfig {
+    /// Set the RPC configuration for the database.
+    pub fn set_rpc(mut self, rpc: DocBufDbRpcConfig) -> Self {
+        self.rpc = Some(rpc);
+
+        self
+    }
+
+    /// Returns the RPC configuration for the database.
+    pub fn rpc(&self) -> Option<&DocBufDbRpcConfig> {
+        self.rpc.as_ref()
+    }
+
     /// Set the tombstone option for the database.
     /// If set to true, deleted docbuf records will be tombstoned,
     /// which will zero out the data, instead of removing the record from the database.

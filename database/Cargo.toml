@@ -6,9 +6,11 @@ edition = "2021"
 [dependencies]
 docbuf-core = { path = "../core", features = ["full"] }
 docbuf-macros = { path = "../macros" }
+docbuf-rpc = { path = "../rpc" }
 file-lock = "2.1.11"
 serde = "1.0.196"
 thiserror = "1.0.57"
+tracing = "0.1.40"
 toml = { version = "0.8.10" }
 vmap = "0.6.2"
 xxhash-rust = { version = "0.8.10", features = ["xxh3", "const_xxh3"] }

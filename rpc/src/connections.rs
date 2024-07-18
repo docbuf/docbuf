@@ -219,7 +219,7 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection> {
                             Err(quiche::h3::Error::Done) => {
                                 info!("Finished reading body from stream {stream_id}");
 
-                                debug!("Request: {request:?}");
+                                // debug!("Request: {request:?}");
 
                                 // self.handle_request(request.to_owned(), req_tx)?;
                                 // current_request = None;

@@ -256,6 +256,14 @@ impl VTableFields {
 
         Ok(())
     }
+
+    /// Find a field by its item index and index
+    #[inline]
+    pub fn find_field_by_index(&self, item_index: u8, index: u8) -> Option<&VTableField> {
+        self.0
+            .iter()
+            .find(|field| field.item_index == item_index && field.index == index)
+    }
 }
 
 impl PartialEq for VTableFields {
@@ -293,10 +301,11 @@ pub enum VTableFieldType {
     F64,
     String,
     Str,
-    Vec,
     Bytes,
     Bool,
     Struct(StructName),
+    Option(Box<VTableFieldType>),
+    Vec(Box<VTableFieldType>),
     HashMap {
         key: Box<VTableFieldType>,
         value: Box<VTableFieldType>,
@@ -323,7 +332,7 @@ impl std::fmt::Display for VTableFieldType {
             VTableFieldType::F64 => write!(f, "f64"),
             VTableFieldType::String => write!(f, "String"),
             VTableFieldType::Str => write!(f, "&str"),
-            VTableFieldType::Vec => write!(f, "Vec"),
+            VTableFieldType::Vec(t) => write!(f, "Vec<{}>", t),
             VTableFieldType::Bytes => write!(f, "Bytes"),
             VTableFieldType::Bool => write!(f, "bool"),
             VTableFieldType::Struct(s) => write!(f, "{}", s),
@@ -331,15 +340,18 @@ impl std::fmt::Display for VTableFieldType {
                 write!(f, "HashMap<{}, {}>", key, value)
             }
             VTableFieldType::Uuid => write!(f, "Uuid"),
+            VTableFieldType::Option(t) => write!(f, "Option<{}>", t),
         }
     }
 }
 
 impl VTableFieldType {
-    pub fn is_struct(r#type: impl TryInto<Self>) -> bool {
+    pub fn is_struct(r#type: impl TryInto<Self>) -> Option<StructName> {
         match r#type.try_into() {
-            Ok(VTableFieldType::Struct(_)) => true,
-            _ => false,
+            Ok(VTableFieldType::Struct(name)) => Some(name),
+            Ok(VTableFieldType::Option(opt)) => Self::is_struct(*opt),
+            Ok(VTableFieldType::Vec(t)) => Self::is_struct(*t),
+            _ => None,
         }
     }
 
@@ -368,6 +380,8 @@ impl VTableFieldType {
 
 impl From<&str> for VTableFieldType {
     fn from(s: &str) -> Self {
+        // println!("field type: {s}");
+
         match s {
             "u8" => VTableFieldType::U8,
             "u16" => VTableFieldType::U16,
@@ -384,13 +398,32 @@ impl From<&str> for VTableFieldType {
             "f32" => VTableFieldType::F32,
             "f64" => VTableFieldType::F64,
             "String" => VTableFieldType::String,
-            "[u8; 32]" => VTableFieldType::Bytes,
-            s if s.contains("str") => VTableFieldType::Str,
+            // "[u8; 32]" => VTableFieldType::Bytes,
             "Vec < u8 >" => VTableFieldType::Bytes,
-            s if s.contains("[u8]") => VTableFieldType::Bytes,
-            s if s.contains("[u8 ; ") => VTableFieldType::Bytes,
-            s if s.contains("Vec") => VTableFieldType::Vec,
+            s if s.contains("str") => VTableFieldType::Str,
+            // s if s.contains("[u8]") => VTableFieldType::Bytes,
+            // s if s.contains("[u8; ") => VTableFieldType::Bytes,
+            s if s.contains("[u8") => VTableFieldType::Bytes,
             s if s.contains("Uuid") => VTableFieldType::Uuid,
+            s if s.contains("Option < Vec < u8 ") => {
+                VTableFieldType::Option(Box::new(VTableFieldType::Bytes))
+            }
+            s if s.contains("Option < Vec < ") => {
+                // println!("Handle Option Vec: {s}");
+                let t = s.trim_start_matches("Option < ").trim_end_matches(" >");
+                let t = t.trim_start_matches("Vec < ").trim_end_matches(" >");
+                VTableFieldType::Option(Box::new(VTableFieldType::Vec(Box::new(
+                    VTableFieldType::from(t),
+                ))))
+            }
+            s if s.contains("Vec") => {
+                let t = s.trim_start_matches("Vec < ").trim_end_matches(" >");
+                VTableFieldType::Vec(Box::new(VTableFieldType::from(t)))
+            }
+            s if s.contains("Option") => {
+                let t = s.trim_start_matches("Option < ").trim_end_matches(" >");
+                VTableFieldType::Option(Box::new(VTableFieldType::from(t)))
+            }
             "bool" => VTableFieldType::Bool,
             s if s.contains("HashMap") => VTableFieldType::parse_hashmap_types(s),
             s => VTableFieldType::Struct(s.to_owned()),
@@ -419,7 +452,7 @@ impl TryFrom<u8> for VTableFieldType {
             13 => VTableFieldType::F64,
             14 => VTableFieldType::String,
             15 => VTableFieldType::Str,
-            16 => VTableFieldType::Vec,
+            16 => VTableFieldType::Vec(Box::new(VTableFieldType::U8)),
             17 => VTableFieldType::Bytes,
             18 => VTableFieldType::Bool,
             19 => VTableFieldType::Struct(String::new()),
@@ -428,6 +461,7 @@ impl TryFrom<u8> for VTableFieldType {
                 value: Box::new(VTableFieldType::U8),
             },
             21 => VTableFieldType::Uuid,
+            22 => VTableFieldType::Option(Box::new(VTableFieldType::U8)),
             _ => return Err(Error::UnknownFieldType(byte)),
         };
 
@@ -454,12 +488,13 @@ impl Into<u8> for VTableFieldType {
             VTableFieldType::F64 => 13,
             VTableFieldType::String => 14,
             VTableFieldType::Str => 15,
-            VTableFieldType::Vec => 16,
+            VTableFieldType::Vec(_) => 16,
             VTableFieldType::Bytes => 17,
             VTableFieldType::Bool => 18,
             VTableFieldType::Struct(_) => 19,
             VTableFieldType::HashMap { .. } => 20, //
             VTableFieldType::Uuid => 21,
+            VTableFieldType::Option(_) => 22,
         }
     }
 }
@@ -483,7 +518,6 @@ impl PartialEq for VTableFieldType {
             | (VTableFieldType::F64, VTableFieldType::F64)
             | (VTableFieldType::String, VTableFieldType::String)
             | (VTableFieldType::Str, VTableFieldType::Str)
-            | (VTableFieldType::Vec, VTableFieldType::Vec)
             | (VTableFieldType::Bytes, VTableFieldType::Bytes)
             | (VTableFieldType::Bool, VTableFieldType::Bool)
             | (VTableFieldType::Uuid, VTableFieldType::Uuid) => true,
@@ -492,6 +526,8 @@ impl PartialEq for VTableFieldType {
                 VTableFieldType::HashMap { key: k1, value: v1 },
                 VTableFieldType::HashMap { key: k2, value: v2 },
             ) => k1 == k2 && v1 == v2,
+            (VTableFieldType::Option(o1), VTableFieldType::Option(o2)) => o1 == o2,
+            (VTableFieldType::Vec(v1), VTableFieldType::Vec(v2)) => v1 == v2,
             _ => false,
         }
     }

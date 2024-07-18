@@ -28,6 +28,8 @@ pub enum Error {
     UuidNotImplemented,
     #[error("partition key not implemented")]
     PartitionKeyNotImplemented,
+    #[error("field not found")]
+    FieldNotFound,
 }
 
 impl serde::ser::Error for Error {
