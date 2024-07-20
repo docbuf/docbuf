@@ -339,6 +339,21 @@ impl VTable {
         vtable_struct.field_by_index(&field_index)
     }
 
+    #[inline]
+    pub fn get_struct_item_index_by_name(&self, name: &str) -> Option<u8> {
+        for vtable_item in self.items.iter() {
+            match vtable_item {
+                VTableItem::Struct(vtable_struct) => {
+                    if vtable_struct.name == name {
+                        return Some(vtable_struct.item_index);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     // Return the field from the current item index and field index
     #[inline]
     pub fn get_item_field_by_index(

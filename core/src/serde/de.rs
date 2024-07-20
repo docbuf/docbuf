@@ -41,6 +41,15 @@ impl<'de> DocBufDeserializer<'de> {
         })
     }
 
+    pub fn set_visited_current_field(&mut self) {
+        self.has_visited
+            .insert((self.current_item_index, self.current_field_index));
+    }
+
+    pub fn is_field_visited(&self, item_index: u8, field_index: u8) -> bool {
+        self.has_visited.contains(&(item_index, field_index))
+    }
+
     #[inline]
     pub fn next_field(&mut self) -> Result<()> {
         println!(
@@ -48,93 +57,7 @@ impl<'de> DocBufDeserializer<'de> {
             self.current_field_index, self.current_field
         );
 
-        if let Some(remaining) = self.remaining_items {
-            if remaining > 0 {
-                return Ok(());
-            }
-        }
-
-        match self.current_field {
-            None => {
-                // If there is no current field, but at least one remaining item, set the remaining items to None.
-
-                // if let Some(remaining) = self.remaining_items {
-                //     if remaining == 1 {
-                //         self.remaining_items = None;
-                //     }
-                // }
-
-                // let mut not_visited = self
-                //     .vtable
-                //     .fields()
-                //     .0
-                //     .into_iter()
-                //     .filter(|field| !self.has_visited.contains(&(field.item_index, field.index)))
-                //     .map(|f| (f.item_index, f.index))
-                //     // TODO: Remove allocation
-                //     .collect::<Vec<_>>();
-
-                // not_visited.sort();
-
-                // println!("Not Visited: {:?}", not_visited);
-
-                // if let Some((item_index, field_index)) = not_visited.first() {
-                //     let field = self
-                //         .vtable
-                //         .get_item_field_by_index(*item_index, *field_index)?;
-
-                //     println!("Field Not Visited: {:?}", field);
-
-                //     if let VTableFieldType::Vec(_) = &field.r#type {
-                //         self.has_visited.insert((field.item_index, field.index));
-                //         self.set_remaining_items(&field.r#type)?;
-                //     }
-
-                //     self.current_item_index = *item_index;
-                //     self.current_field_index = *field_index;
-                //     self.current_item = None;
-                //     self.current_field = None;
-
-                //     println!(
-                //         "Setting Current Field To: {}, {}",
-                //         self.current_item_index, self.current_field_index
-                //     );
-
-                //     return Ok(());
-                // } else {
-                //     println!("Buffer: {:?}", self.buffer);
-                //     panic!("End of fields")
-                // }
-            }
-            Some(field) => {
-                match &field.r#type {
-                    VTableFieldType::HashMap { .. } => {
-                        println!("Skipping remaining items for field {:?}", field);
-                        if let Some(remaining) = self.remaining_items {
-                            if remaining > 0 {
-                                return Ok(());
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-
-                // Mark the field as visited.
-                self.has_visited.insert((field.item_index, field.index));
-
-                // Set the current field index and item index if they do not match.
-                if self.current_field_index != field.index
-                    && self.current_item_index != field.item_index
-                {
-                    eprintln!("Current Field Index and Current Field Index do not match!");
-                    self.current_field_index = field.index;
-                    self.current_item_index = field.item_index;
-                }
-            }
-        }
-
-        // Reset the optional field if it is set.
-        // self.optional_field = None;
+        self.set_visited_current_field();
 
         let item = self.current_item()?;
 
@@ -144,14 +67,19 @@ impl<'de> DocBufDeserializer<'de> {
 
         match item {
             VTableItem::Struct(s) => {
-                if s.num_fields <= self.current_field_index
-                    && self.current_item_index == num_items - 1
-                    && self.has_descended
-                {
-                    // println!("Current Item Index: {}", self.current_item_index);
+                // Decrement the remaining items if this field is the last field in the struct.
+                if self.current_field_index == s.num_fields - 1 {
+                    if let Some(remaining) = self.remaining_items.as_mut() {
+                        if *remaining > 0 {
+                            println!("Decrementing remaining items.");
+                            *remaining -= 1;
 
-                    // panic!("Exiting Early");
-                    return Ok(());
+                            if *remaining == 0 {
+                                println!("Setting remaining items to None.");
+                                self.remaining_items = None;
+                            }
+                        }
+                    }
                 }
 
                 let field = s.field_by_index(&self.current_field_index)?;
@@ -159,62 +87,52 @@ impl<'de> DocBufDeserializer<'de> {
                 println!("Current Field: {:?}", field);
                 println!("Buffer: {:?}", self.buffer);
 
-                if !self.has_visited.contains(&(field.item_index, field.index)) {
-                    if let VTableFieldType::Struct(_) = field.r#type {
-                        println!("Decrementing item index.");
-                        self.current_item_index -= 1;
-                        self.current_field_index = 0;
-                        self.current_item = None;
-                        self.current_field = None;
+                if let VTableFieldType::Struct(_) = field.r#type {
+                    println!("Decrementing item index.");
+                    self.current_item_index -= 1;
+                    self.current_field_index = 0;
+                    self.current_item = None;
+                    self.current_field = None;
 
-                        return Ok(());
-                    }
+                    return Ok(());
+                }
 
-                    if let VTableFieldType::Option(opt) = &field.r#type {
-                        if let VTableFieldType::Struct(_) = **opt {
+                if let VTableFieldType::Option(opt) = &field.r#type {
+                    if let VTableFieldType::Struct(struct_name) = &**opt {
+                        if let Some(item_index) =
+                            self.vtable.get_struct_item_index_by_name(struct_name)
+                        {
                             println!("\n\nFound Optional Struct field: {:?}\n\n", field);
                             println!("Decrementing item index.");
-                            self.current_item_index -= 1;
+
+                            self.current_item_index = item_index;
                             self.current_field_index = 0;
                             self.current_item = None;
                             self.current_field = None;
                             return Ok(());
                         }
                     }
+                }
 
-                    if let VTableFieldType::Vec(_) = field.r#type {
-                        println!("\n\nFound Vec field: {:?}\n\n", field);
-                        println!("Current Item Index: {:?}", self.current_item_index);
-                        println!("Remaining Items: {:?}", self.remaining_items);
-                        if self.remaining_items.is_some() {
-                            if self.current_item_index > 0 {
-                                println!("Decrementing item index.");
-                                self.current_item_index -= 1;
-                                self.current_field_index = 0;
-                                self.current_item = None;
-                                self.current_field = None;
-                            }
+                if let VTableFieldType::Vec(inner) = &field.r#type {
+                    println!("Found Vec Field");
 
+                    if self.remaining_items.is_none() {
+                        return Ok(());
+                    }
+
+                    if let VTableFieldType::Struct(struct_name) = &**inner {
+                        if let Some(item_index) =
+                            self.vtable.get_struct_item_index_by_name(struct_name)
+                        {
+                            println!("Set Vec inner Struct");
+
+                            self.current_item_index = item_index;
+                            self.current_field_index = 0;
+                            self.current_item = None;
+                            self.current_field = None;
                             return Ok(());
                         }
-
-                        // match self.remaining_items.as_ref() {
-                        //     Some(remaining_items) => {
-                        //        // Decrement the remaining items.
-                        //        *remaining_items -= 1;
-
-                        //        // Check if the remaining items have been exhausted.
-                        //        if *remaining_items == 0 {
-                        //            self.remaining_items = None;
-                        //        }
-                        //     }
-                        //     _ => {
-                        //         // println!("Ignoring Empty Vec");
-                        //         // self.current_item_index = field.item_index;
-                        //         // self.current_field_index = 0;
-                        //         // return Ok(());
-                        //     }
-                        // }
                     }
                 }
 
@@ -241,6 +159,18 @@ impl<'de> DocBufDeserializer<'de> {
                     self.has_descended = true;
                     self.current_item_index += 1;
                     self.current_field_index = 0;
+
+                    // skip a field if it has already been visited.
+                    while self.is_field_visited(self.current_item_index, self.current_field_index) {
+                        if self.current_field_index < s.num_fields - 1 {
+                            self.current_field_index += 1;
+                        } else {
+                            self.current_item_index += 1;
+                            self.current_field_index = 0;
+                            break;
+                        }
+                    }
+
                     self.current_item = None;
                     self.current_field = None;
                     return self.next_field();
@@ -275,7 +205,7 @@ impl<'de> DocBufDeserializer<'de> {
         );
 
         if self.buffer.is_empty() {
-            self.remaining_items = None;
+            self.remaining_items = Some(0);
             return Ok(());
         }
 
@@ -293,10 +223,8 @@ impl<'de> DocBufDeserializer<'de> {
 
                 self.buffer.drain(0..4);
 
-                if data_len > 0 {
-                    println!("Setting Remaining Item Length: {:?}", data_len);
-                    self.remaining_items = Some(data_len);
-                }
+                println!("Setting Remaining Item Length: {:?}", data_len);
+                self.remaining_items = Some(data_len);
             }
             (VTableFieldType::Vec(_), None) => {
                 let data_len = u32::from_le_bytes([
@@ -309,10 +237,7 @@ impl<'de> DocBufDeserializer<'de> {
                 self.buffer.drain(0..4);
 
                 println!("Setting Remaining Item Length: {:?}", data_len);
-
-                if data_len > 0 {
-                    self.remaining_items = Some(data_len);
-                }
+                self.remaining_items = Some(data_len);
             }
             // (_, Some(n)) => {
             //     println!("Decrementing remaining items.");
@@ -420,7 +345,9 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
         let value = seed.deserialize(&mut **self);
 
         // Decrement the remaining field items if it is set
-        if let VTableFieldType::HashMap { .. } = &self.current_field()?.r#type {
+        if let VTableFieldType::HashMap { .. } | VTableFieldType::Vec(_) =
+            &self.current_field()?.r#type
+        {
             // Decrement the remaining field items if it is set
             self.remaining_items.as_mut().map(|x| *x -= 1);
         };
@@ -441,6 +368,11 @@ impl<'de> SeqAccess<'de> for DocBufDeserializer<'de> {
 
         println!("Next Element Seed: {field:?}");
 
+        if self.buffer.is_empty() {
+            println!("Buffer is empty");
+            return Ok(None);
+        }
+
         match &field.r#type {
             VTableFieldType::Struct(_) => {
                 self.next_field()?;
@@ -449,26 +381,13 @@ impl<'de> SeqAccess<'de> for DocBufDeserializer<'de> {
                 println!("Deserialize Vec");
                 self.set_remaining_items(&field.r#type)?;
 
-                if self.remaining_items.is_none() {
-                    println!("{:?}", self.has_visited);
-                    return Ok(None);
+                if let Some(remaining) = self.remaining_items {
+                    println!("Remaining Items: {:?}", remaining);
                 }
 
                 self.next_field()?;
             }
-            VTableFieldType::Option(_) => {}
             _ => {}
-        }
-
-        println!("Remaining Items: {:?}", self.remaining_items);
-
-        if let Some(remaining) = self.remaining_items.as_mut() {
-            if *remaining == 0 {
-                self.remaining_items = None;
-                return Ok(None);
-            } else {
-                *remaining -= 1;
-            }
         }
 
         seed.deserialize(&mut *self).map(Some)

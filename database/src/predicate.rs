@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 #[docbuf]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Predicates {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub and: Vec<Predicate>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub or: Vec<Predicate>,
 }
 
