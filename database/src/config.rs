@@ -145,6 +145,12 @@ impl DocBufDbConfig {
         self.directory.as_ref().ok_or(Error::DirectoryNotSet)
     }
 
+    pub fn set_directory(mut self, directory: PathBuf) -> Self {
+        self.directory = Some(directory);
+
+        self
+    }
+
     pub fn setup_directory(&mut self) -> Result<(), Error> {
         let dir = self
             .directory
@@ -231,7 +237,7 @@ mod tests {
     fn test_docbuf_db_config() -> Result<(), Box<dyn std::error::Error>> {
         use super::*;
 
-        let config = DocBufDbConfig::load("/tmp/.docbuf/db/config.toml")?;
+        let config = DocBufDbConfig::default().set_directory("/tmp/.docbuf/db".into());
 
         assert_eq!(config.directory()?, &PathBuf::from("/tmp/.docbuf/db"));
 

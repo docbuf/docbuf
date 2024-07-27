@@ -21,7 +21,17 @@ pub struct DocBufDbManager {
 }
 
 impl DocBufDbManager {
-    pub fn from_config(config_path: impl Into<PathBuf>) -> Result<Self, Error> {
+    pub fn from_config(config: DocBufDbConfig) -> Result<Self, Error> {
+        let rpc_client = config
+            .rpc()
+            .and_then(|rpc| rpc.server)
+            .map(|s| RpcClient::connect(s, None, None).ok())
+            .flatten();
+
+        Ok(Self { config, rpc_client })
+    }
+
+    pub fn from_config_path(config_path: impl Into<PathBuf>) -> Result<Self, Error> {
         let config = DocBufDbConfig::load(config_path.into())?;
 
         let rpc_client = config

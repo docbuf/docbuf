@@ -8,11 +8,11 @@ use std::{collections::HashMap, net::SocketAddr};
 use docbuf_core::deps::uuid::Uuid;
 use docbuf_core::traits::DocBuf;
 use docbuf_db::service::{CountDocBufRequest, WriteDocBufRequest};
-use docbuf_db::DocBufDbManager;
 use docbuf_db::PartitionKey;
 use docbuf_db::Predicate;
 use docbuf_db::Predicates;
 use docbuf_db::{traits::*, DocBufDbRpcConfig};
+use docbuf_db::{DocBufDbConfig, DocBufDbManager};
 use docbuf_rpc::{
     client::RpcClient,
     error::Error,
@@ -29,7 +29,8 @@ use tracing::{level_filters::LevelFilter, Subscriber};
 
 #[test]
 fn test_complex_db() -> Result<(), docbuf_db::Error> {
-    let mut db = DocBufDbManager::from_config("/tmp/.docbuf/db/config.toml")?;
+    let db_config = DocBufDbConfig::default().set_directory("/tmp/.docbuf/db/".into());
+    let mut db = DocBufDbManager::from_config(db_config)?;
 
     // Set the tombstone flag to true.
     // This will zero out the data when a document is deleted,
@@ -180,7 +181,8 @@ pub async fn test_db_rpc_server() -> Result<(), Box<dyn std::error::Error>> {
         boring_ctx_builder: None,
     })?;
 
-    let db = DocBufDbManager::from_config("/tmp/.docbuf/db/config.toml")?;
+    let db_config = DocBufDbConfig::default().set_directory("/tmp/.docbuf/db/".into());
+    let db = DocBufDbManager::from_config(db_config)?;
     let ctx = Arc::new(Mutex::new(db));
     let services = RpcServices::new(ctx).add_service(DocBufDbManager::rpc_service()?)?;
 
@@ -203,7 +205,8 @@ pub async fn test_db_rpc_client() -> Result<(), Box<dyn std::error::Error>> {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Failed to set global default subscriber");
 
-    let mut db = DocBufDbManager::from_config("/tmp/.docbuf/db/config.toml")?;
+    let db_config = DocBufDbConfig::default().set_directory("/tmp/.docbuf/db/".into());
+    let mut db = DocBufDbManager::from_config(db_config)?;
 
     // Update the rpc configuration to connect to the server.
     db.config = db.config.set_rpc(DocBufDbRpcConfig {
