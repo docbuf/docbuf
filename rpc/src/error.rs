@@ -1,5 +1,3 @@
-use std::sync::{MutexGuard, TryLockError};
-
 use crate::Status;
 
 #[derive(Debug, thiserror::Error)]

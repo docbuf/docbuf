@@ -1,4 +1,4 @@
-use crate::{Error, RpcHeader, RpcRequest, RpcResponse};
+use crate::{Error, RpcRequest, RpcResponse};
 
 use std::{collections::HashMap, sync::Arc};
 

@@ -296,7 +296,7 @@ impl Parser {
                         parser.context.set_current_option_item(option_item);
                     }
                     Token::OptionsEnd => {
-                        println!("Options Set: {:?}", parser.context.current_option_set);
+                        // println!("Options Set: {:?}", parser.context.current_option_set);
 
                         // Reset the current option item
                         // current_option_item = None;
@@ -313,7 +313,7 @@ impl Parser {
                         // }
                     }
                     Token::Document => {
-                        println!("Current Document: {:?}", parser.context.current_document);
+                        // println!("Current Document: {:?}", parser.context.current_document);
                     }
                     Token::Enumerate => {
                         let options = match parser.context.current_option_set.clone() {
@@ -332,14 +332,14 @@ impl Parser {
                         match parser.context.previous_token {
                             Some(Token::Document | Token::OptionsEnd) => {
                                 let document_name = source[span].trim().to_string();
-                                println!("Document Name: {:?}", document_name);
+                                // println!("Document Name: {:?}", document_name);
                                 if let Some(document) = &mut parser.context.current_document {
                                     document.name = document_name;
                                 }
                             }
                             Some(Token::Enumerate) => {
                                 let enumerate_name = source[span].trim().to_string();
-                                println!("Enumerate Name: {:?}", enumerate_name);
+                                // println!("Enumerate Name: {:?}", enumerate_name);
                                 if let Some(enumerable) = &mut parser.context.current_enumerable {
                                     enumerable.name = enumerate_name;
                                 }
@@ -374,10 +374,10 @@ impl Parser {
                     Token::FieldEnd => {
                         if let Some(field_name) = &parser.context.current_field_name {
                             let span = parser.context.previous_span.end + 1..tokens.span().start;
-                            let field_value = source[span].trim().to_string();
+                            let _field_value = source[span].trim().to_string();
 
-                            println!("Field Name: {:?}", field_name);
-                            println!("Field Value: {:?}", field_value);
+                            // println!("Field Name: {:?}", field_name);
+                            // println!("Field Value: {:?}", field_value);
 
                             if let Some(document) = &mut parser.context.current_document {
                                 let options = match &mut parser.context.current_option_set {
@@ -387,7 +387,7 @@ impl Parser {
 
                                 document.fields.insert(field_name.clone(), options);
 
-                                println!("Current Document: {:?}", document);
+                                // println!("Current Document: {:?}", document);
                             }
                         } else {
                             unimplemented!("Field End")
@@ -430,7 +430,7 @@ impl Parser {
     pub fn from_file(file: &Path) -> Result<Self, Error> {
         let parent_dir = file.parent().ok_or(Error::InvalidPath)?;
 
-        println!("Parent Dir: {:?}", parent_dir);
+        // println!("Parent Dir: {:?}", parent_dir);
 
         let file = std::fs::read_to_string(file)?;
 
@@ -444,7 +444,7 @@ impl Parser {
     }
 
     fn pragma(source: &str) -> Result<Pragma, Error> {
-        println!("Source: {:?}", source);
+        // println!("Source: {:?}", source);
 
         match source.trim() {
             "v1" => Ok(Pragma::V1),
@@ -465,7 +465,7 @@ impl Parser {
             .iter()
             .map(|file| {
                 let file = dir.join(file);
-                println!("File: {:?}", file);
+                // println!("File: {:?}", file);
                 Self::from_file(&file).unwrap()
             })
             .collect::<Vec<Parser>>();

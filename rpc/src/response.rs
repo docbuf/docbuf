@@ -1,7 +1,7 @@
 use crate::{RpcHeaders, StreamId};
 
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender};
+use std::sync::mpsc::{sync_channel, Receiver, SendError, SyncSender};
 
 #[derive(Debug, Clone)]
 pub struct RpcResponse {

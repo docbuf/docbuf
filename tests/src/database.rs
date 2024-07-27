@@ -240,7 +240,7 @@ pub async fn test_db_rpc_client() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 pub async fn test_write_docbuf_request() -> Result<(), Box<dyn std::error::Error>> {
-    let mut doc = Document::dummy();
+    let doc = Document::dummy();
 
     let vtable = Document::vtable()?;
     let mut buffer = vtable.alloc_buf();
@@ -258,17 +258,17 @@ pub async fn test_write_docbuf_request() -> Result<(), Box<dyn std::error::Error
 
     let mut req_buffer = req_vtable.alloc_buf();
 
-    let req_offsets = request.to_docbuf(&mut req_buffer)?;
+    let _req_offsets = request.to_docbuf(&mut req_buffer)?;
 
     // Deserialize the request.
-    let mut req = WriteDocBufRequest::from_docbuf(&mut req_buffer)?;
+    let _req = WriteDocBufRequest::from_docbuf(&mut req_buffer)?;
 
     Ok(())
 }
 
 #[tokio::test]
 pub async fn test_predicate_serialization() -> Result<(), Box<dyn std::error::Error>> {
-    let mut doc = Document::dummy();
+    let doc = Document::dummy();
 
     let vtable = Document::vtable()?;
 
@@ -276,7 +276,7 @@ pub async fn test_predicate_serialization() -> Result<(), Box<dyn std::error::Er
 
     let mut buffer = vtable.alloc_buf();
 
-    let offsets = doc.to_docbuf(&mut buffer)?;
+    let _offsets = doc.to_docbuf(&mut buffer)?;
 
     let predicates = Predicates::from(Predicate::new(
         vtable
@@ -312,7 +312,7 @@ pub async fn test_predicate_serialization() -> Result<(), Box<dyn std::error::Er
 
     let mut predicates_buffer = predicates_vtable.alloc_buf();
 
-    let predicates_offsets = predicates.to_docbuf(&mut predicates_buffer)?;
+    let _predicates_offsets = predicates.to_docbuf(&mut predicates_buffer)?;
 
     println!("Predicates Buffer: {predicates_buffer:?}");
 

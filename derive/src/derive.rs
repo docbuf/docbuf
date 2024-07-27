@@ -364,7 +364,7 @@ pub fn docbuf_impl_db(
     }
 }
 
-pub fn docbuf_impl_partition(options: &DocBufOpts, item: &TokenStream) -> TokenStream {
+pub fn docbuf_impl_partition(_options: &DocBufOpts, item: &TokenStream) -> TokenStream {
     let ast: ItemStruct = syn::parse(item.to_owned().into()).expect("Failed to parse item");
 
     ast.fields
@@ -545,7 +545,7 @@ pub fn docbuf_impl_serialization() -> TokenStream {
 
 pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
-    let lifetimes = parse_item_lifetimes(&item);
+    let _lifetimes = parse_item_lifetimes(&item);
 
     // parse generics from struct
     let generics = parse_item_generics(&item);

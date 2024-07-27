@@ -1,7 +1,7 @@
 use crate::error::Error;
 // use crate::http3::Http3Config;
 use crate::quic::{QuicConfig, TlsOptions, TransportErrorCode, MAX_QUIC_DATAGRAM_SIZE};
-use crate::{connections::*, PartialRpcRequests, RpcRequest, RpcServices};
+use crate::{connections::*, RpcRequest, RpcServices};
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -350,7 +350,7 @@ impl RpcServer<quiche::ConnectionId<'static>, quiche::Connection, quiche::h3::Co
 
             // Process outgoing quic packets.
             let mut connections = self.connections()?;
-            for (connection_id, connection) in connections.iter_mut() {
+            for (_connection_id, connection) in connections.iter_mut() {
                 // debug!(
                 //     "Processing Outgoing Quic Packets for Connection ID: {:?}",
                 //     connection_id

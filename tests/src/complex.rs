@@ -199,7 +199,7 @@ fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
 
     let mut buffer = Vec::with_capacity(1024);
 
-    println!("document: {:?}", document);
+    // println!("document: {:?}", document);
 
     document
         // Round Trip Test
@@ -209,9 +209,9 @@ fn test_serialize_complex() -> Result<(), docbuf_core::error::Error> {
         .assert_serialization_size(&mut buffer)
         .expect("Failed encoding benchmark");
 
-    let doc = Document::from_docbuf(&mut buffer)?;
+    let _doc = Document::from_docbuf(&mut buffer)?;
 
-    println!("doc: {:?}", doc);
+    // println!("doc: {:?}", doc);
 
     // assert_eq!(document, doc);
 
@@ -230,8 +230,8 @@ fn test_serialize_hash_map() -> Result<(), docbuf_core::error::Error> {
 
     bincode::serialize_into(&mut buffer, &map).expect("Failed to serialize");
 
-    println!("Bincode Buffer: {:?}", buffer);
-    println!("Buffer length: {:?}", buffer.len());
+    // println!("Bincode Buffer: {:?}", buffer);
+    // println!("Buffer length: {:?}", buffer.len());
 
     //
 
@@ -255,13 +255,13 @@ fn test_docbuf_map() -> Result<(), docbuf_core::error::Error> {
 
     let mut buffer = Vec::with_capacity(1024);
 
-    println!("document: {:?}\n\n", document);
+    // println!("document: {:?}\n\n", document);
 
     let mut offsets = document.to_docbuf(&mut buffer)?;
 
-    println!("Buffer: {:?}\n\n", buffer);
+    // println!("Buffer: {:?}\n\n", buffer);
 
-    println!("Offsets: {:?}\n\n", offsets);
+    // println!("Offsets: {:?}\n\n", offsets);
 
     let target_offset = offsets
         .as_ref()
@@ -271,12 +271,12 @@ fn test_docbuf_map() -> Result<(), docbuf_core::error::Error> {
 
     let mut field_data: String = Document::vtable()?.docbuf_map(&buffer, &target_offset)?;
 
-    println!("Field: {:?}\n\n", field_data);
+    // println!("Field: {:?}\n\n", field_data);
 
     assert_eq!(document.author, field_data);
 
     field_data = String::from("Hello, World!");
-    let target_offset = Document::vtable()?.docbuf_map_replace(
+    let _target_offset = Document::vtable()?.docbuf_map_replace(
         &field_data,
         // consumes the target offset, and returns the updated offset
         target_offset,
@@ -298,9 +298,9 @@ fn test_vtable_size() -> Result<(), docbuf_core::error::Error> {
     let vtable = Document::vtable()?;
 
     // Get the derministic 8-byte id of the vtable
-    let vid = vtable.id().to_string();
+    let _vid = vtable.id().to_string();
 
-    println!("VTable ID: {:?}", vid);
+    // println!("VTable ID: {:?}", vid);
 
     let page_size = vtable.page_size(None);
     let avg_size = vtable.avg_size() as usize;

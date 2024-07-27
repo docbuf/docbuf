@@ -6,7 +6,7 @@ use std::{
 use proc_macro2::{token_stream, Ident, Span, TokenStream};
 use proc_macro_error::emit_error;
 use quote::{quote, ToTokens};
-use syn::{ItemImpl, ItemTrait, Signature, Type};
+use syn::{ItemImpl, ItemTrait, Signature};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum RpcOption {
@@ -102,7 +102,7 @@ impl From<&mut token_stream::IntoIter> for RpcOptions {
                 let key = key.to_string().replace("\"", "");
                 let value = value.to_string().replace("\"", "");
 
-                println!("Found RPC Option: {key} = {value}");
+                // println!("Found RPC Option: {key} = {value}");
 
                 options.insert(RpcOption::from((key, value)));
             }

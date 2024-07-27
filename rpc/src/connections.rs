@@ -345,7 +345,7 @@ impl RpcConnections<quiche::ConnectionId<'static>, quiche::Connection, quiche::h
     }
 
     pub fn lock(&self) -> Result<RpcConnectionsLock, Error> {
-        self.0.lock().map_err(|e| Error::ConnectionsLockPoisioned)
+        self.0.lock().map_err(|_| Error::ConnectionsLockPoisioned)
     }
 
     pub fn timeout(&self) -> Result<(), Error> {

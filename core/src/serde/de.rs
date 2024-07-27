@@ -1,8 +1,7 @@
 use std::collections::HashSet;
 
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
-use tracing::debug;
+use serde::Deserialize;
 
 use crate::vtable::*;
 use crate::{
@@ -390,7 +389,7 @@ impl<'de> SeqAccess<'de> for DocBufDeserializer<'de> {
     where
         T: DeserializeSeed<'de>,
     {
-        let item = self.current_item()?;
+        // let item = self.current_item()?;
         let field = self.current_field()?;
 
         // println!("Next Element Seed: {field:?}");
@@ -750,7 +749,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     {
         // println!("\n\nDeserialize Seq\n\n");
         // println!("Buffer: {:?}", self.buffer);
-        let field = self.current_field()?;
+        // let field = self.current_field()?;
 
         // println!("Field: {field:?}");
 

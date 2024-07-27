@@ -255,7 +255,7 @@ impl Partition {
 
                     debug!("Section End: {section_end}");
 
-                    let section_start = section_end - (offset_length + doc_buffer_len) as u64;
+                    // let section_start = section_end - (offset_length + doc_buffer_len) as u64;
 
                     let shift_length = doc_buffer_len + offset_length;
                     let mut shift_buffer = vec![0u8; 1024];
