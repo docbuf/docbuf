@@ -369,7 +369,7 @@ impl VTable {
         item_index: VTableItemIndex,
         field_index: VTableFieldIndex,
     ) -> Result<&VTableField, Error> {
-        println!("get_item_field_by_index");
+        // println!("get_item_field_by_index");
         self.item_by_index(item_index)
             .and_then(|vtable_item| match vtable_item {
                 VTableItem::Struct(vtable_struct) => vtable_struct

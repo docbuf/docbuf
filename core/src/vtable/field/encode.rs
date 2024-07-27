@@ -40,7 +40,7 @@ impl DocBufEncodeField<String> for VTableField {
                 Ok(self.as_offset(offset_start..offset_end))
             }
             _ => {
-                println!("Error encoding field type: String");
+                // println!("Error encoding field type: String");
                 Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
             }
         }
@@ -83,7 +83,7 @@ impl DocBufEncodeField<&str> for VTableField {
                 Ok(self.as_offset(offset_start..offset_end))
             }
             _ => {
-                println!("Error encoding field type: &str");
+                // println!("Error encoding field type: &str");
                 Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
             }
         }
@@ -126,7 +126,7 @@ impl DocBufEncodeField<&[u8]> for VTableField {
                 Ok(self.as_offset(offset_start..offset_end))
             }
             _ => {
-                println!("Error encoding field type: &[u8]");
+                // println!("Error encoding field type: &[u8]");
                 Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
             }
         }
@@ -152,7 +152,7 @@ impl DocBufEncodeField<bool> for VTableField {
                 Ok(self.as_offset(offset_start..offset_end))
             }
             _ => {
-                println!("Error encoding field type: bool");
+                // println!("Error encoding field type: bool");
                 Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
             }
         }

@@ -62,7 +62,7 @@ impl<'a> DocBufSerializer<'a> {
     pub fn encode_array_start(&mut self, num_elements: usize) -> Result<()> {
         let field = self.current_field()?;
 
-        println!("encode_array_start: {:?}", field);
+        // println!("encode_array_start: {:?}", field);
 
         field.encode_array_start(num_elements, &mut self.buffer)?;
 
@@ -105,7 +105,7 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     type SerializeStructVariant = Self;
 
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self> {
-        println!("serialize_struct: {}", name);
+        // println!("serialize_struct: {}", name);
 
         for vtable_item in self.vtable.items.iter() {
             match vtable_item {
@@ -324,7 +324,7 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
-        println!("Serialize Sequence");
+        // println!("Serialize Sequence");
 
         self.encode_array_start(len.unwrap_or_default())?;
 
@@ -515,7 +515,7 @@ impl<'a, 'b> serde::ser::SerializeStructVariant for &'a mut DocBufSerializer<'b>
 
 impl<'a, 'b> DocBufSerializer<'b> {
     pub fn set_field(&'a mut self, field_name: &'static str) -> Result<()> {
-        println!("Current Item: {:?}", self.current_item);
+        // println!("Current Item: {:?}", self.current_item);
 
         match self.current_item {
             Some(VTableItem::Struct(field_struct)) => {
@@ -527,13 +527,13 @@ impl<'a, 'b> DocBufSerializer<'b> {
                         return Ok(());
                     }
                     Err(_) => {
-                        println!("Previous Items: {:?}", self.previous_items.len());
+                        // println!("Previous Items: {:?}", self.previous_items.len());
 
                         // Attempt to find the field in the previous items
                         // If the field is found, set the current item to the previous item
                         // and set the previous item to None
                         while let Some(previous_item) = self.previous_items.pop_front() {
-                            println!("Previous Item: {:?}", previous_item);
+                            // println!("Previous Item: {:?}", previous_item);
                             match previous_item {
                                 VTableItem::Struct(field_struct) => {
                                     match field_struct.field_by_name(field_name) {
