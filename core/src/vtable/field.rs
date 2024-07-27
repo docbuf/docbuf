@@ -91,8 +91,7 @@ impl VTableField {
             return Err(Error::MapEntriesExceedsMax(num_entries));
         }
 
-        // Only encode the first three bytes
-        output.extend_from_slice(&(num_entries as u32).to_le_bytes()[0..3]);
+        output.extend_from_slice(&(num_entries as u32).to_le_bytes());
 
         Ok(())
     }

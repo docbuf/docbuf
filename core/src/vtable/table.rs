@@ -292,6 +292,14 @@ impl VTable {
         Err(Error::ItemNotFound)
     }
 
+    #[inline]
+    /// Get the number of fields in an item, given its index.
+    pub fn num_fields_by_index(&self, index: VTableItemIndex) -> Result<u8, Error> {
+        match self.item_by_index(index)? {
+            VTableItem::Struct(vtable_struct) => Ok(vtable_struct.num_fields),
+        }
+    }
+
     // Return the struct name from the struct index
     #[inline]
     pub fn struct_by_index(&self, index: VTableItemIndex) -> Result<&VTableStruct, Error> {
