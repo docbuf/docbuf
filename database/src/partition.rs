@@ -3,6 +3,7 @@ pub mod partition_key;
 
 pub use partition_id::*;
 pub use partition_key::*;
+use tracing::debug;
 
 use crate::{Error, Predicates};
 
@@ -85,7 +86,7 @@ impl Partition {
 
     /// Decrement the count of the number of docbufs in the partition.
     fn decrement_count(&mut self) -> Result<(), Error> {
-        println!("Decrementing partition count.");
+        debug!("Decrementing partition count.");
 
         let mut count = [0u8; 8];
         self.lock.file.seek(SeekFrom::Start(0))?;
@@ -94,7 +95,7 @@ impl Partition {
         let mut count = u64::from_le_bytes(count);
         count -= 1;
 
-        println!("Count: {count}");
+        debug!("Count: {count}");
 
         self.lock.file.seek(SeekFrom::Start(0))?;
 
@@ -109,8 +110,14 @@ impl Partition {
     ///
     /// | offset length | offsets | docbuf | ... next docbuf offset length ...
     ///
-    pub fn write_docbuf(&mut self, mut offsets: Vec<u8>, buffer: Vec<u8>) -> Result<(), Error> {
-        println!("Writing docbuf length {} to partition file.", buffer.len());
+    pub fn write_docbuf(
+        &mut self,
+        mut offsets: Vec<u8>,
+        buffer: Vec<u8>,
+    ) -> Result<[u8; 16], Error> {
+        debug!("Writing docbuf length {} to partition file.", buffer.len());
+
+        let id = &buffer[..16];
 
         self.vtable.check_offsets(&offsets)?;
 
@@ -134,14 +141,19 @@ impl Partition {
             self.increment_count()?;
         }
 
-        Ok(())
+        let id = [
+            id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7], id[8], id[9], id[10], id[11],
+            id[12], id[13], id[14], id[15],
+        ];
+
+        Ok(id)
     }
 
     /// Reads a document buffer from the partition file. This will read
     /// the offsets and the docbuf.
     /// Will return the size of the document buffer.
     pub fn read_docbuf(&mut self, doc_id: &[u8; 16]) -> Result<Option<Vec<u8>>, Error> {
-        println!("Reading docbuf from partition file.");
+        debug!("Reading docbuf from partition file.");
         // Offset length is fixed size according to the vtable.
         let offset_length = self.vtable.offset_len();
         let file_length = self.lock.file.metadata()?.len();
@@ -160,15 +172,11 @@ impl Partition {
                 break;
             }
 
-            println!("Reading offset");
-
             // Read the document buffer offsets from the partition.
             self.lock.file.read_exact(&mut buffer[..offset_length])?;
 
             let offsets = VTableFieldOffsets::from_bytes(&buffer[..offset_length]);
             let doc_buffer_len = offsets.doc_buffer_len();
-
-            println!("Reading docbuf length {}", doc_buffer_len);
 
             self.lock.file.read_exact(&mut buffer[..doc_buffer_len])?;
 
@@ -185,7 +193,7 @@ impl Partition {
 
     /// Delete the document buffer from the partition file.
     pub fn delete_docbuf(&mut self, doc_id: &[u8; 16], tombstone: bool) -> Result<Vec<u8>, Error> {
-        println!("Deleting docbuf from partition file.");
+        debug!("Deleting docbuf from partition file.");
         let file_length = self.lock.file.metadata()?.len();
         let offset_length = self.vtable.offset_len();
 
@@ -203,7 +211,7 @@ impl Partition {
                 break;
             }
 
-            println!("Cursor Position: {cursor_pos}");
+            debug!("Cursor Position: {cursor_pos}");
 
             // Read the document buffer offsets from the partition.
             self.lock.file.read_exact(&mut buffer[..offset_length])?;
@@ -221,43 +229,43 @@ impl Partition {
             // Check if the first 16 bytes of the buffer match the doc_id.
             // If so, return the document buffer.
             if &buffer[..16] == doc_id {
-                println!("Found DocBuf");
+                debug!("Found DocBuf");
 
                 let section_end = self.lock.file.stream_position()?;
 
                 if tombstone {
-                    println!("Tombstoning DocBuf Record");
+                    debug!("Tombstoning DocBuf Record");
 
                     let section_start = section_end - doc_buffer_len as u64;
 
                     self.lock.file.seek(SeekFrom::Start(section_start))?;
 
-                    println!("Section Start: {section_start}");
+                    debug!("Section Start: {section_start}");
 
                     let permissions = self.lock.file.metadata()?.permissions();
 
-                    println!("Permissions: {permissions:?}");
+                    debug!("Permissions: {permissions:?}");
 
                     let zeros = vec![0u8; doc_buffer_len];
                     self.lock.file.write_all(&zeros)?;
 
-                    println!("Zeroed DocBuf Record");
+                    debug!("Zeroed DocBuf Record");
                 } else {
-                    println!("Removing DocBuf Record");
+                    debug!("Removing DocBuf Record");
 
-                    println!("Section End: {section_end}");
+                    debug!("Section End: {section_end}");
 
-                    let section_start = section_end - (offset_length + doc_buffer_len) as u64;
+                    // let section_start = section_end - (offset_length + doc_buffer_len) as u64;
 
                     let shift_length = doc_buffer_len + offset_length;
                     let mut shift_buffer = vec![0u8; 1024];
 
                     let mut remaining_bytes = file_length - section_end;
 
-                    println!("Remaining Bytes: {remaining_bytes}");
+                    debug!("Remaining Bytes: {remaining_bytes}");
 
                     while remaining_bytes > 0 {
-                        println!("Shifting the document position");
+                        debug!("Shifting the document position");
                         let cursor = self.lock.file.stream_position()?;
 
                         let read_length = std::cmp::min(remaining_bytes, shift_buffer.len() as u64);
@@ -277,26 +285,26 @@ impl Partition {
                         self.lock.file.seek(SeekFrom::Start(cursor + read_length))?;
                     }
 
-                    println!("File Length: {file_length}");
-                    println!("Shift Length: {shift_length}");
+                    debug!("File Length: {file_length}");
+                    debug!("Shift Length: {shift_length}");
 
                     let new_file_length = file_length - shift_length as u64;
 
-                    println!("New File Length: {new_file_length}");
+                    debug!("New File Length: {new_file_length}");
 
-                    println!("Setting length of file");
+                    debug!("Setting length of file");
 
                     self.lock.file.seek(SeekFrom::Start(new_file_length))?;
 
                     // Truncate the file to the new length.
                     self.lock.file.set_len(new_file_length).ok();
 
-                    println!("File Truncated");
+                    debug!("File Truncated");
                 }
 
                 // let updated_file_length = self.lock.file.metadata()?.len();
 
-                // println!("Updated File Length: {updated_file_length}");
+                // debug!("Updated File Length: {updated_file_length}");
 
                 // // Check the file length matches the updated length.
                 // let new_file_length = self.lock.file.metadata()?.len();
@@ -331,10 +339,10 @@ impl Partition {
         offsets: &[u8],
         docbuf: &[u8],
     ) -> Result<(), Error> {
-        println!("update_docbuf::Updating Document Buffer");
+        debug!("update_docbuf::Updating Document Buffer");
         let file_length = self.lock.file.metadata()?.len();
 
-        println!("File Length: {file_length:?}");
+        debug!("File Length: {file_length:?}");
 
         let offset_length = self.vtable.offset_len();
 
@@ -349,7 +357,7 @@ impl Partition {
         loop {
             let cursor_pos = self.lock.file.stream_position()?;
 
-            println!("Cursor Position: {cursor_pos:?}");
+            debug!("Cursor Position: {cursor_pos:?}");
 
             // Check if the cursor is at the end of the file.
             if cursor_pos >= file_length {
@@ -366,20 +374,20 @@ impl Partition {
 
             // Check if the buffer is a tombstone.
             if self.is_tombstone(&buffer[..doc_buffer_len]) {
-                println!("Found Tombstone, skipping...");
+                debug!("Found Tombstone, skipping...");
                 continue;
             }
 
             if &buffer[..16] == doc_id {
                 found_docbuf = true;
-                println!("Found Document, updating...");
+                debug!("Found Document, updating...");
                 let section_end = self.lock.file.stream_position()?;
 
-                println!("Section End: {section_end:?}");
+                debug!("Section End: {section_end:?}");
 
                 let section_start = section_end - (offset_length + doc_buffer_len) as u64;
 
-                println!("Section Start: {section_start:?}");
+                debug!("Section Start: {section_start:?}");
 
                 match docbuf.len().cmp(&doc_buffer_len) {
                     Ordering::Equal => {
@@ -389,7 +397,7 @@ impl Partition {
                         self.lock.file.write_all(&docbuf)?;
                     }
                     Ordering::Less => {
-                        println!("Less Than");
+                        debug!("Less Than");
                         let shift_length = doc_buffer_len - docbuf.len();
                         let mut shift_buffer = vec![0u8; 1024];
 
@@ -430,15 +438,15 @@ impl Partition {
                         // let new_file_length = self.lock.file.metadata()?.len();
                         // let expected_length = file_length - shift_length as u64;
 
-                        // println!("New File Length: {new_file_length}");
-                        // println!("Expected Length: {expected_length}");
+                        // debug!("New File Length: {new_file_length}");
+                        // debug!("Expected Length: {expected_length}");
 
                         // if new_file_length != expected_length {
                         //     assert_eq!(new_file_length, expected_length, "File length mismatch");
                         // }
                     }
                     Ordering::Greater => {
-                        println!("Greater Than");
+                        debug!("Greater Than");
                         // Shift the remaing bytes to the right, by the
                         // difference in length between the new docbuf and the
                         // original docbuf.
@@ -455,7 +463,7 @@ impl Partition {
                         // let mut cursor = file_length;
 
                         while remaining_bytes > 0 {
-                            println!("Remaining Bytes: {remaining_bytes}");
+                            debug!("Remaining Bytes: {remaining_bytes}");
                             // Shift the bytes to the right from the end
                             // of the file, until the section end plus
                             // the shift length is reached.
@@ -489,7 +497,7 @@ impl Partition {
                         // Write the new offsets and docbuf to the partition file.
                         self.lock.file.seek(SeekFrom::Start(section_start))?;
 
-                        println!(
+                        debug!(
                             "Writing offsets length {} at position: {}",
                             offsets.len(),
                             self.lock.file.stream_position()?,
@@ -502,7 +510,7 @@ impl Partition {
                             .file
                             .seek(SeekFrom::Start(section_start + offsets.len() as u64))?;
 
-                        println!(
+                        debug!(
                             "Writing docbuf length {} at position: {}",
                             docbuf.len(),
                             self.lock.file.stream_position()?,
@@ -516,8 +524,8 @@ impl Partition {
                         // let new_file_length = self.lock.file.metadata()?.len();
                         // let expected_length = file_length + shift_length as u64;
 
-                        // println!("New File Length: {new_file_length}");
-                        // println!("Expected Length: {expected_length}");
+                        // debug!("New File Length: {new_file_length}");
+                        // debug!("Expected Length: {expected_length}");
 
                         // if new_file_length != expected_length {
                         //     assert_eq!(new_file_length, expected_length, "File length mismatch");

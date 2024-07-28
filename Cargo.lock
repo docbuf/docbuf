@@ -439,10 +439,12 @@ version = "0.1.0"
 dependencies = [
  "docbuf-core",
  "docbuf-macros",
+ "docbuf-rpc",
  "file-lock",
  "serde",
  "thiserror",
  "toml",
+ "tracing",
  "vmap",
  "xxhash-rust",
 ]

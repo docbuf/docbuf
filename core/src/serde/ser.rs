@@ -1,4 +1,7 @@
+use std::collections::VecDeque;
+
 use serde::Serialize;
+use tracing::debug;
 
 use crate::vtable::*;
 use crate::{
@@ -19,6 +22,7 @@ pub struct DocBufSerializer<'a> {
     pub current_item: Option<&'static VTableItem>,
     pub current_field: Option<&'static VTableField>,
     pub previous_item: Option<&'static VTableItem>,
+    pub previous_items: VecDeque<&'static VTableItem>,
     pub offsets: VTableFieldOffsets,
 }
 
@@ -36,6 +40,7 @@ impl<'a> DocBufSerializer<'a> {
             current_item: None,
             current_field: None,
             previous_item: None,
+            previous_items: VecDeque::new(),
             offsets: VTableFieldOffsets::with_capacity(
                 vtable.num_items as usize * DEFAULT_CAPACITY_MULTIPLIER,
             ),
@@ -55,8 +60,11 @@ impl<'a> DocBufSerializer<'a> {
     }
 
     pub fn encode_array_start(&mut self, num_elements: usize) -> Result<()> {
-        self.current_field()?
-            .encode_array_start(num_elements, &mut self.buffer)?;
+        let field = self.current_field()?;
+
+        // println!("encode_array_start: {:?}", field);
+
+        field.encode_array_start(num_elements, &mut self.buffer)?;
 
         Ok(())
     }
@@ -97,6 +105,8 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     type SerializeStructVariant = Self;
 
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self> {
+        // println!("serialize_struct: {}", name);
+
         for vtable_item in self.vtable.items.iter() {
             match vtable_item {
                 VTableItem::Struct(vtable_struct) => {
@@ -104,6 +114,12 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
                         self.previous_item_index = self.current_item_index;
                         self.current_item_index = vtable_struct.item_index;
                         self.previous_item = self.current_item;
+
+                        // Push the item to the previous items
+                        if let Some(item) = self.current_item {
+                            self.previous_items.push_back(item);
+                        }
+
                         self.current_item = Some(vtable_item);
                         return Ok(self);
                     }
@@ -251,14 +267,19 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {
-        unimplemented!("serialize_none")
+        let offset = self.current_field()?.encode_none(&mut self.buffer)?;
+
+        self.offsets.push(offset);
+
+        Ok(())
     }
 
-    fn serialize_some<T: ?Sized>(self, _value: &T) -> Result<Self::Ok>
+    fn serialize_some<T: ?Sized>(self, value: &T) -> Result<Self::Ok>
     where
         T: Serialize,
     {
-        unimplemented!("serialize_some")
+        debug!("Serializing Option::Some value");
+        T::serialize(value, self)
     }
 
     fn serialize_unit(self) -> Result<Self::Ok> {
@@ -303,6 +324,8 @@ impl<'a, 'b> serde::ser::Serializer for &'a mut DocBufSerializer<'b> {
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        // println!("Serialize Sequence");
+
         self.encode_array_start(len.unwrap_or_default())?;
 
         Ok(self)
@@ -462,59 +485,7 @@ impl<'a, 'b> serde::ser::SerializeStruct for &'a mut DocBufSerializer<'b> {
     where
         T: Serialize,
     {
-        let field = match self.current_item {
-            Some(VTableItem::Struct(field_struct)) => match field_struct.field_by_name(name) {
-                Ok(field) => field,
-                Err(_) => match self.previous_item {
-                    Some(VTableItem::Struct(field_struct)) => {
-                        match field_struct.field_by_name(name) {
-                            Ok(field) => {
-                                self.current_item = self.previous_item;
-                                self.current_item_index = self.previous_item_index;
-                                self.previous_item = None;
-                                field
-                            }
-                            Err(_) => {
-                                return Err(Error::Serde(format!("Field not found: {}", name)));
-                            }
-                        }
-                    }
-                    _ => {
-                        return Err(Error::Serde(format!("Field not found: {}", name)));
-                    }
-                },
-            },
-            _ => match self
-                .vtable
-                .struct_by_index(self.current_item_index)?
-                .field_by_name(name)
-            {
-                Ok(field) => field,
-                Err(_) => {
-                    match self
-                        .vtable
-                        .struct_by_index(self.previous_item_index)?
-                        .field_by_name(name)
-                    {
-                        Ok(field) => {
-                            // Reset the current item to the parent struct
-                            self.current_item = self.previous_item;
-                            self.current_item_index = self.previous_item_index;
-                            self.previous_item = None;
-
-                            // Return the field
-                            field
-                        }
-                        Err(_) => {
-                            return Err(Error::Serde(format!("Field not found: {}", name)));
-                        }
-                    }
-                }
-            },
-        };
-
-        self.current_field_index = field.index;
-        self.current_field = Some(field);
+        self.set_field(name)?;
 
         // Serialize the field
         value.serialize(&mut **self)
@@ -539,5 +510,90 @@ impl<'a, 'b> serde::ser::SerializeStructVariant for &'a mut DocBufSerializer<'b>
 
     fn end(self) -> Result<Self::Ok> {
         unimplemented!("end")
+    }
+}
+
+impl<'a, 'b> DocBufSerializer<'b> {
+    pub fn set_field(&'a mut self, field_name: &'static str) -> Result<()> {
+        // println!("Current Item: {:?}", self.current_item);
+
+        match self.current_item {
+            Some(VTableItem::Struct(field_struct)) => {
+                match field_struct.field_by_name(field_name) {
+                    Ok(field) => {
+                        self.current_field_index = field.index;
+                        self.current_field = Some(field);
+
+                        return Ok(());
+                    }
+                    Err(_) => {
+                        // println!("Previous Items: {:?}", self.previous_items.len());
+
+                        // Attempt to find the field in the previous items
+                        // If the field is found, set the current item to the previous item
+                        // and set the previous item to None
+                        while let Some(previous_item) = self.previous_items.pop_front() {
+                            // println!("Previous Item: {:?}", previous_item);
+                            match previous_item {
+                                VTableItem::Struct(field_struct) => {
+                                    match field_struct.field_by_name(field_name) {
+                                        Ok(field) => {
+                                            self.current_item = Some(previous_item);
+                                            self.current_item_index = self.previous_item_index;
+                                            self.previous_item = None;
+
+                                            self.current_field_index = field.index;
+                                            self.current_field = Some(field);
+
+                                            return Ok(());
+                                        }
+                                        Err(_) => {
+                                            self.previous_items.push_back(previous_item);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        return Err(Error::Serde(format!("Field not found: {}", field_name)));
+                    }
+                }
+            }
+            _ => match self
+                .vtable
+                .struct_by_index(self.current_item_index)?
+                .field_by_name(field_name)
+            {
+                Ok(field) => {
+                    self.current_field_index = field.index;
+                    self.current_field = Some(field);
+
+                    return Ok(());
+                }
+                Err(_) => {
+                    match self
+                        .vtable
+                        .struct_by_index(self.previous_item_index)?
+                        .field_by_name(field_name)
+                    {
+                        Ok(field) => {
+                            // Reset the current item to the parent struct
+                            self.current_item = self.previous_item;
+                            self.current_item_index = self.previous_item_index;
+                            self.previous_item = None;
+
+                            self.current_field_index = field.index;
+                            self.current_field = Some(field);
+
+                            // Return the field
+                            return Ok(());
+                        }
+                        Err(_) => {
+                            return Err(Error::Serde(format!("Field not found: {}", field_name)));
+                        }
+                    }
+                }
+            },
+        };
     }
 }

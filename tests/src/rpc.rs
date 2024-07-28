@@ -21,12 +21,12 @@ use tokio::{io::join, join};
 use tracing::info;
 use tracing::{level_filters::LevelFilter, Subscriber};
 
-const SERVER_PORT: u16 = 60250;
+pub const SERVER_PORT: u16 = 60250;
 
 // TODO: Replace quiche example certificates with self-signed certificates.
-const CERTIFICATE: &str = "certs/cert.crt";
-const PRIVATE_KEY: &str = "certs/cert.key";
-const ROOT_CERTIFICATE: &str = "certs/rootca.crt";
+pub const CERTIFICATE: &str = "certs/cert.crt";
+pub const PRIVATE_KEY: &str = "certs/cert.key";
+pub const ROOT_CERTIFICATE: &str = "certs/rootca.crt";
 
 pub struct ExampleService;
 

@@ -10,6 +10,7 @@ pub mod request;
 pub mod response;
 pub mod server;
 pub mod service;
+pub mod status;
 pub mod traits;
 
 // Re-export modules;
@@ -25,4 +26,5 @@ pub use request::*;
 pub use response::*;
 pub use server::*;
 pub use service::*;
+pub use status::*;
 pub use traits::*;

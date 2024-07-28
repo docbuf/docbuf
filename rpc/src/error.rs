@@ -1,4 +1,4 @@
-use std::sync::{MutexGuard, TryLockError};
+use crate::Status;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -64,4 +64,6 @@ pub enum Error {
     RpcClientReceiverDisconnected,
     #[error("RPC Client Response Thread Error")]
     RpcClientReceiverThreadFailed,
+    #[error(transparent)]
+    RpcStatus(#[from] Status),
 }

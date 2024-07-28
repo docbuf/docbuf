@@ -81,6 +81,13 @@ impl DocBufOpts {
         })
     }
 
+    pub fn use_db(&self) -> bool {
+        self.0.iter().any(|opt| match opt {
+            DocBufOpt::UseDb(v) => *v,
+            _ => false,
+        })
+    }
+
     pub fn db_path(&self) -> Option<&str> {
         self.0.iter().find_map(|opt| match opt {
             DocBufOpt::DbConfig(path) => Some(path.as_str()),
@@ -176,6 +183,8 @@ pub fn docbuf_item(
 ) -> TokenStream {
     let fields = parse_item_fields(item, options);
 
+    // panic!("Fields: {:?}", fields.to_string());
+
     let derivatives = parse_item_derivatives(item);
 
     let output = quote! {
@@ -247,6 +256,10 @@ pub fn docbuf_impl_db(
 ) -> TokenStream {
     #[cfg(not(feature = "db"))]
     return TokenStream::new();
+
+    if !options.use_db() {
+        return TokenStream::new();
+    }
 
     // Check if the db_config option is present
     // let db_mngr = options.db_mngr();
@@ -351,7 +364,7 @@ pub fn docbuf_impl_db(
     }
 }
 
-pub fn docbuf_impl_partition(options: &DocBufOpts, item: &TokenStream) -> TokenStream {
+pub fn docbuf_impl_partition(_options: &DocBufOpts, item: &TokenStream) -> TokenStream {
     let ast: ItemStruct = syn::parse(item.to_owned().into()).expect("Failed to parse item");
 
     ast.fields
@@ -396,32 +409,35 @@ pub fn docbuf_impl_vtable(
     let fields = ast.fields.into_iter().collect::<Vec<_>>();
 
     let fields = fields.iter().map(|field| {
-        let name = field.ident.as_ref().map(|f| f.to_owned()).unwrap_or(Ident::new("__inner__", Span::call_site()));
+        let field_name = field.ident.as_ref().map(|f| f.to_owned()).unwrap_or(Ident::new("__inner__", Span::call_site()));
         let ty = field.ty.to_token_stream();
         let rules = parse_field_rules(&field).expect("Failed to parse field rules");
 
         match VTableFieldType::is_struct(ty.to_string().as_ref()) {
-            true => {
-                let table_name = format!("{}_vtable", ty.to_string()).to_lowercase();
+            Some(name) => {
+                // panic!("Found struct name: {name:?}");
+                let table_name = format!("{}_vtable", name).to_lowercase();
                 let table_name_var = Ident::new(&table_name, Span::call_site());
 
-                let struct_name = format!("{}_struct", ty.to_string()).to_lowercase();
+                let struct_name = format!("{}_struct", name).to_lowercase();
                 let struct_name_var = Ident::new(&struct_name, Span::call_site());
+
+                let stype = Ident::new(&name, Span::call_site());
 
                 let scope = quote! {
                     // Lookup the vtable for the struct
-                    let #table_name_var = #ty::vtable().expect("Failed to lookup vtable for struct");
+                    let #table_name_var = #stype::vtable().expect("Failed to lookup vtable for struct");
 
                     for vtable_item in #table_name_var.items.iter() {
                         match vtable_item {
                             ::docbuf_core::vtable::VTableItem::Struct(#struct_name_var) => {
                                 let name = #struct_name_var.name.clone();
-                                if name == stringify!(#ty) {
-                                    let field_type = ::docbuf_core::vtable::VTableFieldType::Struct(name);
+                                if name == stringify!(#stype) {
+                                    let field_type = ::docbuf_core::vtable::VTableFieldType::from(stringify!(#ty));
 
                                     // Add the field rules to the vtable field
                                     #rules
-                                    vtable_struct.add_field(field_type, stringify!(#name), field_rules);
+                                    vtable_struct.add_field(field_type, stringify!(#field_name), field_rules);
                                 }
                             }
                             _ => {
@@ -436,12 +452,12 @@ pub fn docbuf_impl_vtable(
 
                 scope
             },
-            false => {
+            None => {
                 quote! {
                     // Add the field rules to the vtable field
                     #rules
 
-                    vtable_struct.add_field(stringify!(#ty), stringify!(#name), field_rules);
+                    vtable_struct.add_field(stringify!(#ty), stringify!(#field_name), field_rules);
                 }
             }
         }
@@ -529,14 +545,18 @@ pub fn docbuf_impl_serialization() -> TokenStream {
 
 pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
     let name = parse_item_name(&item);
-    let lifetimes = parse_item_lifetimes(&item);
+    let _lifetimes = parse_item_lifetimes(&item);
+
+    // parse generics from struct
+    let generics = parse_item_generics(&item);
 
     let options = DocBufOpts::from(&attr);
 
-    let item_docbuf = docbuf_item(&name, &lifetimes, &options, &item);
-    let docbuf_methods = docbuf_impl(&name, &lifetimes, &options, &item);
-    let crypto_methods = docbuf_impl_crypto(&name, &lifetimes, &options);
-    let db_methods = docbuf_impl_db(&name, &lifetimes, &options, &item);
+    let item_docbuf = docbuf_item(&name, &generics, &options, &item);
+    let docbuf_methods = docbuf_impl(&name, &generics, &options, &item);
+    let crypto_methods = docbuf_impl_crypto(&name, &generics, &options);
+
+    let db_methods = docbuf_impl_db(&name, &generics, &options, &item);
 
     let output = quote! {
         #item_docbuf
@@ -552,6 +572,13 @@ pub fn derive_docbuf(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn parse_item_name(input: &TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input.to_owned().into()).expect("Failed to parse input");
     ast.ident.to_token_stream()
+}
+
+/// Parse the item generics from the input token stream
+pub fn parse_item_generics(input: &TokenStream) -> TokenStream {
+    let ast: DeriveInput = syn::parse(input.to_owned().into()).expect("Failed to parse input");
+    let generics = ast.generics;
+    generics.to_token_stream()
 }
 
 // Retain the item derive macros from the input token stream,

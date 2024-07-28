@@ -2,15 +2,22 @@ use std::cmp::Ordering;
 
 use crate::Error;
 
+use docbuf_core::serde::serde_bytes;
 use docbuf_core::{
     traits::DocBufDecodeField,
     vtable::{VTable, VTableField, VTableFieldOffsetIndex, VTableFieldOffsets, VTableFieldType},
 };
+use docbuf_macros::docbuf;
 
-#[derive(Debug, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[docbuf]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Predicates {
-    and: Vec<Predicate>,
-    or: Vec<Predicate>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub and: Vec<Predicate>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub or: Vec<Predicate>,
 }
 
 impl From<Predicate> for Predicates {
@@ -74,14 +81,17 @@ impl Predicates {
     }
 }
 
-#[derive(Debug, Clone)]
+#[docbuf]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Predicate {
-    /// The field offset to compare against.
-    offset: VTableFieldOffsetIndex,
+    /// The item and field index to compare against.
+    item_index: u8,
+    field_index: u8,
     /// The value to compare against.
+    #[serde(with = "serde_bytes")]
     value: Vec<u8>,
-    /// The type of predicate.
-    order: Ordering,
+    /// The ordering of the comparison.
+    order: i8,
 }
 
 impl AsRef<[u8]> for Predicate {
@@ -99,14 +109,15 @@ impl Predicate {
         let offset = field.offset_index();
 
         Self {
-            offset,
+            item_index: offset.0,
+            field_index: offset.1,
             value: compare_value.into(),
-            order,
+            order: order as i8,
         }
     }
 
     pub fn offset(&self) -> VTableFieldOffsetIndex {
-        self.offset
+        (self.item_index, self.field_index)
     }
 
     pub fn value(&self) -> &[u8] {
@@ -114,7 +125,7 @@ impl Predicate {
     }
 
     pub fn order(&self) -> Ordering {
-        self.order
+        self.order.cmp(&0)
     }
 
     pub fn eval(
@@ -135,6 +146,9 @@ impl Predicate {
                 let field = vtable.get_field_by_offset_index(self.offset())?;
 
                 match field.r#type {
+                    VTableFieldType::Option(_) => {
+                        unimplemented!("Option type not implemented")
+                    }
                     VTableFieldType::I8 => {
                         let value: i8 = field.decode(&mut self.value().to_vec())?;
                         let field_value: i8 = field.decode(&mut data.to_vec())?;
@@ -223,7 +237,7 @@ impl Predicate {
                     VTableFieldType::String
                     | VTableFieldType::Str
                     | VTableFieldType::Bytes
-                    | VTableFieldType::Vec
+                    | VTableFieldType::Vec(_)
                     | VTableFieldType::Bool
                     | VTableFieldType::HashMap { .. }
                     | VTableFieldType::Uuid

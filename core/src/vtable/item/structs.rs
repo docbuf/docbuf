@@ -69,9 +69,12 @@ impl VTableStruct {
     // Return the field by name from the struct
     #[inline]
     pub fn field_by_name(&self, name: &str) -> Result<&VTableField, Error> {
-        self.fields
+        let field = self
+            .fields
             .find_field_by_name(name)
-            .ok_or(Error::FieldNotFound)
+            .ok_or(Error::FieldNotFound)?;
+
+        Ok(field)
     }
 
     // Return the field by index from the struct

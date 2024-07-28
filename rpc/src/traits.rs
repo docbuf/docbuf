@@ -1,6 +1,4 @@
-use crate::{Error, RpcMethodHandler};
-
-use docbuf_core::traits::DocBuf;
+use crate::Error;
 
 /// Remote Procedural Call (RPC) Server Trait for Implementing an RPC layer for
 /// DocBuf enabled documents.

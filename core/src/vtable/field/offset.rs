@@ -91,6 +91,12 @@ impl VTableFieldOffsetDiff {
 #[derive(Debug, Default, Clone)]
 pub struct VTableFieldOffsets(Vec<VTableFieldOffset>);
 
+impl Into<Vec<u8>> for VTableFieldOffsets {
+    fn into(self) -> Vec<u8> {
+        self.to_vec()
+    }
+}
+
 impl VTableFieldOffsets {
     #[inline]
     pub fn new() -> Self {

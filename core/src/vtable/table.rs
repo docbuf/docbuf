@@ -30,6 +30,12 @@ pub type VTableNamespace = String; //  = &'a str;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VTableId([u8; 8]);
 
+impl Into<[u8; 8]> for &VTableId {
+    fn into(self) -> [u8; 8] {
+        self.0
+    }
+}
+
 impl AsRef<[u8]> for VTableId {
     fn as_ref(&self) -> &[u8] {
         &self.0
@@ -257,9 +263,11 @@ impl VTable {
     #[inline]
     pub fn merge_vtable(&mut self, vtable: &'static VTable) {
         for vtable_item in vtable.items.iter() {
-            match vtable_item {
-                VTableItem::Struct(vtable_struct) => {
-                    self.add_struct(vtable_struct.to_owned());
+            if !self.items.0.contains(vtable_item) {
+                match vtable_item {
+                    VTableItem::Struct(vtable_struct) => {
+                        self.add_struct(vtable_struct.to_owned());
+                    }
                 }
             }
         }
@@ -282,6 +290,14 @@ impl VTable {
         }
 
         Err(Error::ItemNotFound)
+    }
+
+    #[inline]
+    /// Get the number of fields in an item, given its index.
+    pub fn num_fields_by_index(&self, index: VTableItemIndex) -> Result<u8, Error> {
+        match self.item_by_index(index)? {
+            VTableItem::Struct(vtable_struct) => Ok(vtable_struct.num_fields),
+        }
     }
 
     // Return the struct name from the struct index
@@ -331,6 +347,21 @@ impl VTable {
         vtable_struct.field_by_index(&field_index)
     }
 
+    #[inline]
+    pub fn get_struct_item_index_by_name(&self, name: &str) -> Option<u8> {
+        for vtable_item in self.items.iter() {
+            match vtable_item {
+                VTableItem::Struct(vtable_struct) => {
+                    if vtable_struct.name == name {
+                        return Some(vtable_struct.item_index);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     // Return the field from the current item index and field index
     #[inline]
     pub fn get_item_field_by_index(
@@ -338,6 +369,7 @@ impl VTable {
         item_index: VTableItemIndex,
         field_index: VTableFieldIndex,
     ) -> Result<&VTableField, Error> {
+        // println!("get_item_field_by_index");
         self.item_by_index(item_index)
             .and_then(|vtable_item| match vtable_item {
                 VTableItem::Struct(vtable_struct) => vtable_struct
@@ -356,6 +388,7 @@ impl VTable {
 
     /// Simple hash tagger. This is used to generate a 16-bit hash tag from a string slice.
     /// Collisions will occur with observations of 2^8 + 1 samples.
+    #[inline]
     pub fn hash_tag(tag: &str) -> [u8; 2] {
         let bytes = tag.as_bytes();
         let len = bytes.len() as u16;
@@ -371,6 +404,22 @@ impl VTable {
                 acc
             })
             .to_le_bytes()
+    }
+
+    /// Return all fields in the vtable, including fields from all items.
+    #[inline]
+    pub fn fields(&self) -> VTableFields {
+        let fields = self
+            .items
+            .0
+            .iter()
+            .map(|item| match item {
+                VTableItem::Struct(vtable_struct) => vtable_struct.fields.0.clone(),
+            })
+            .flatten()
+            .collect::<Vec<VTableField>>();
+
+        VTableFields(fields)
     }
 
     #[inline]

@@ -1,6 +1,23 @@
 use super::*;
 
-// Implement DocBufDecodeField for VTableField
+impl VTableField {
+    pub fn decode_option(&self, buffer: &mut Vec<u8>) -> Result<Option<()>, Error> {
+        // println!("Decode Option Buffer: {buffer:?}");
+        if buffer.len() < NULL_FIELD.len() {
+            return Ok(Some(()));
+        }
+
+        let bytes = &buffer[..16];
+
+        if bytes == &NULL_FIELD {
+            // println!("Decoding Option: {bytes:?}");
+            buffer.drain(0..16);
+            Ok(None)
+        } else {
+            Ok(Some(()))
+        }
+    }
+}
 
 impl DocBufDecodeField<String> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<String, Error> {
@@ -46,6 +63,8 @@ impl DocBufDecodeField<bool> for VTableField {
 
 impl DocBufDecodeField<u8> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<u8, Error> {
+        // println!("Decoding: {:?}", self.r#type);
+
         match self.r#type {
             VTableFieldType::U8 | VTableFieldType::Uuid | VTableFieldType::Bytes => {
                 let data = buffer[0];
@@ -65,8 +84,10 @@ impl DocBufDecodeField<u8> for VTableField {
 
 impl DocBufDecodeField<u16> for VTableField {
     fn decode(&self, buffer: &mut Vec<u8>) -> Result<u16, Error> {
+        // println!("Field Type: {:?}", self.r#type);
+
         match self.r#type {
-            VTableFieldType::U16 => {
+            VTableFieldType::U16 | VTableFieldType::Option(_) => {
                 let data = u16::from_le_bytes([buffer[0], buffer[1]]);
 
                 // Consume the data from the buffer

@@ -1,6 +1,19 @@
 use super::*;
 
-// Implement DocBufEncodeField for VTableField
+pub const NULL_FIELD: [u8; 16] = [1u8; 16];
+
+impl VTableField {
+    pub fn encode_none(&self, buffer: &mut Vec<u8>) -> Result<VTableFieldOffset, Error> {
+        // Encode the data length
+        buffer.extend_from_slice(&NULL_FIELD);
+
+        // data offset is empty.
+        let data_offset_range = buffer.len()..buffer.len();
+
+        // Return the offset of the field data, disregarding the data length
+        Ok(self.as_offset(data_offset_range))
+    }
+}
 
 impl DocBufEncodeField<String> for VTableField {
     fn encode(&self, data: &String, buffer: &mut Vec<u8>) -> Result<VTableFieldOffset, Error> {
@@ -27,7 +40,7 @@ impl DocBufEncodeField<String> for VTableField {
                 Ok(self.as_offset(offset_start..offset_end))
             }
             _ => {
-                println!("Error encoding field type: String");
+                // println!("Error encoding field type: String");
                 Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
             }
         }
@@ -70,7 +83,7 @@ impl DocBufEncodeField<&str> for VTableField {
                 Ok(self.as_offset(offset_start..offset_end))
             }
             _ => {
-                println!("Error encoding field type: &str");
+                // println!("Error encoding field type: &str");
                 Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
             }
         }
@@ -95,7 +108,7 @@ impl DocBufEncodeField<&[u8]> for VTableField {
                 // Return the offset of the field data, disregarding the data length
                 Ok(self.as_offset(offset_start..offset_end))
             }
-            VTableFieldType::Bytes => {
+            VTableFieldType::Bytes | VTableFieldType::Vec(_) => {
                 // prepend length to the field data
                 let data_length = (data.len() as u32).to_le_bytes();
 
@@ -113,7 +126,7 @@ impl DocBufEncodeField<&[u8]> for VTableField {
                 Ok(self.as_offset(offset_start..offset_end))
             }
             _ => {
-                println!("Error encoding field type: &[u8]");
+                // println!("Error encoding field type: &[u8]");
                 Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
             }
         }
@@ -139,7 +152,7 @@ impl DocBufEncodeField<bool> for VTableField {
                 Ok(self.as_offset(offset_start..offset_end))
             }
             _ => {
-                println!("Error encoding field type: bool");
+                // println!("Error encoding field type: bool");
                 Err(Error::DocBufEncodeFieldType(self.r#type.to_string()))
             }
         }

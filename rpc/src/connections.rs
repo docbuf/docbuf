@@ -219,7 +219,7 @@ impl RpcConnection<quiche::Connection, quiche::h3::Connection> {
                             Err(quiche::h3::Error::Done) => {
                                 info!("Finished reading body from stream {stream_id}");
 
-                                debug!("Request: {request:?}");
+                                // debug!("Request: {request:?}");
 
                                 // self.handle_request(request.to_owned(), req_tx)?;
                                 // current_request = None;
@@ -345,7 +345,7 @@ impl RpcConnections<quiche::ConnectionId<'static>, quiche::Connection, quiche::h
     }
 
     pub fn lock(&self) -> Result<RpcConnectionsLock, Error> {
-        self.0.lock().map_err(|e| Error::ConnectionsLockPoisioned)
+        self.0.lock().map_err(|_| Error::ConnectionsLockPoisioned)
     }
 
     pub fn timeout(&self) -> Result<(), Error> {

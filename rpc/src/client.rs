@@ -3,15 +3,11 @@ use crate::{
     error::Error,
     quic::{QuicConfig, TlsOptions, TransportErrorCode, MAX_QUIC_DATAGRAM_SIZE},
     server::MAX_UDP_PAYLOAD_SIZE,
-    PartialRpcResponse, PartialRpcResponses, RpcHeader, RpcRequest, RpcRequestReceiver,
-    RpcRequestSender, RpcResponse,
+    PartialRpcResponse, PartialRpcResponses, RpcRequest, RpcRequestSender, RpcResponse,
 };
 
+use std::time::Duration;
 use std::{net::SocketAddr, sync::mpsc::TryRecvError, thread::JoinHandle};
-use std::{
-    sync::mpsc::{Receiver, RecvError, Sender},
-    time::Duration,
-};
 
 use mio::{net::UdpSocket, Events, Poll, Token};
 use quiche::SendInfo;
@@ -21,6 +17,7 @@ use tracing::{debug, error, info, warn};
 /// Default socket token.
 const DEFAULT_SOCKET: Token = Token(0);
 
+#[derive(Debug)]
 pub struct RpcClient {
     sender: RpcRequestSender,
     daemon: JoinHandle<Result<(), Error>>,

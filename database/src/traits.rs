@@ -1,6 +1,4 @@
-use crate::{Error, PartitionId, PartitionKey};
-
-use std::collections::HashSet;
+use crate::{Error, PartitionKey};
 
 use docbuf_core::{traits::*, vtable::VTableId};
 

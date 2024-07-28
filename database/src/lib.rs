@@ -3,6 +3,7 @@ pub mod lock;
 pub mod manager;
 pub mod partition;
 pub mod predicate;
+pub mod service;
 pub mod traits;
 
 use std::sync::mpsc::SendError;
@@ -12,6 +13,7 @@ pub use lock::*;
 pub use manager::*;
 pub use partition::*;
 pub use predicate::*;
+pub use service::*;
 pub use traits::*;
 
 #[derive(Debug, thiserror::Error)]
@@ -46,4 +48,8 @@ pub enum Error {
     DocBufNotFound,
     #[error(transparent)]
     SendError(#[from] SendError<[u8; 16]>),
+    #[error(transparent)]
+    RpcStatus(#[from] docbuf_rpc::Status),
+    #[error(transparent)]
+    RpcError(#[from] docbuf_rpc::Error),
 }

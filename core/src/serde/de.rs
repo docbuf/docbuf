@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::Deserialize;
 
@@ -16,6 +18,8 @@ pub struct DocBufDeserializer<'a> {
     current_field_index: VTableFieldIndex,
     current_item: Option<&'static VTableItem>,
     current_field: Option<&'static VTableField>,
+    // optional_field: Option<VTableFieldType>,
+    has_visited: HashSet<(u8, u8)>,
     has_descended: bool,
     remaining_items: Option<u32>,
 }
@@ -29,50 +33,134 @@ impl<'de> DocBufDeserializer<'de> {
             current_field_index: 0,
             current_item: None,
             current_field: None,
+            // optional_field: None,
+            has_visited: HashSet::with_capacity(vtable.num_fields as usize),
             has_descended: false,
             remaining_items: None,
         })
     }
 
+    pub fn set_visited_current_field(&mut self) {
+        self.has_visited
+            .insert((self.current_item_index, self.current_field_index));
+    }
+
+    pub fn is_field_visited(&self, item_index: u8, field_index: u8) -> bool {
+        self.has_visited.contains(&(item_index, field_index))
+    }
+
     #[inline]
     pub fn next_field(&mut self) -> Result<()> {
-        if let Some(remaining) = self.remaining_items {
-            if remaining > 0 {
-                return Ok(());
-            }
-        }
+        // println!(
+        //     "Next Field; Current Item Index: {}, Current Field Index: {}, Field: {:?}",
+        //     self.current_item_index, self.current_field_index, self.current_field
+        // );
+
+        self.set_visited_current_field();
 
         let item = self.current_item()?;
+
+        // println!("\n\nCurrent Item: {item:?}\n\n");
+
         let num_items = self.vtable.num_items;
 
         match item {
             VTableItem::Struct(s) => {
-                if s.num_fields <= self.current_field_index
-                    && self.current_item_index == num_items - 1
-                    && self.has_descended
-                {
-                    return Ok(());
+                // Decrement the remaining items if this field is the last field in the struct.
+                if self.current_field_index == s.num_fields - 1 {
+                    if let Some(remaining) = self.remaining_items.as_mut() {
+                        if *remaining > 0 {
+                            // println!("Decrementing remaining items.");
+                            *remaining -= 1;
+
+                            if *remaining == 0 {
+                                // println!("Setting remaining items to None.");
+                                self.remaining_items = None;
+                            }
+                        }
+                    }
                 }
 
                 let field = s.field_by_index(&self.current_field_index)?;
 
+                // println!("Current Field: {:?}", field);
+                // println!("Buffer: {:?}", self.buffer);
+
+                // if let VTableFieldType::HashMap { .. } = field.r#type {
+                //     if let Some(remaining) = self.remaining_items {
+                //         if remaining > 0 {
+                //             println!("Decrementing remaining items.");
+                //             self.remaining_items = Some(remaining - 1);
+                //             return Ok(());
+                //         }
+
+                //         if remaining == 0 {
+                //             println!("Setting remaining items to None.");
+                //             self.remaining_items = None;
+                //         }
+                //     }
+                // }
+
                 if let VTableFieldType::Struct(_) = field.r#type {
                     if !self.has_descended {
+                        // println!("Decrementing item index.");
                         self.current_item_index -= 1;
                         self.current_field_index = 0;
                         self.current_item = None;
                         self.current_field = None;
+
                         return Ok(());
+                    }
+                }
+
+                if let VTableFieldType::Option(opt) = &field.r#type {
+                    if let VTableFieldType::Struct(struct_name) = &**opt {
+                        if let Some(item_index) =
+                            self.vtable.get_struct_item_index_by_name(struct_name)
+                        {
+                            // println!("\n\nFound Optional Struct field: {:?}\n\n", field);
+                            // println!("Decrementing item index.");
+
+                            self.current_item_index = item_index;
+                            self.current_field_index = 0;
+                            self.current_item = None;
+                            self.current_field = None;
+                            return Ok(());
+                        }
+                    }
+                }
+
+                if let VTableFieldType::Vec(inner) = &field.r#type {
+                    // println!("Found Vec Field");
+
+                    if self.remaining_items.is_none() {
+                        return Ok(());
+                    }
+
+                    if let VTableFieldType::Struct(struct_name) = &**inner {
+                        if let Some(item_index) =
+                            self.vtable.get_struct_item_index_by_name(struct_name)
+                        {
+                            // println!("Set Vec inner Struct");
+
+                            self.current_item_index = item_index;
+                            self.current_field_index = 0;
+                            self.current_item = None;
+                            self.current_field = None;
+                            return Ok(());
+                        }
                     }
                 }
 
                 // Increment the field if there are more fields.
                 if self.current_field_index < s.num_fields - 1 {
+                    // println!("Incrementing field index.");
                     self.current_field_index += 1;
                     self.current_field = None;
                 // Decrement the item index if the current item has no more fields,
                 // and the current item index has not yet reached the zeroth index.
                 } else if self.current_item_index > 0 && !self.has_descended {
+                    // println!("Decrementing item index.");
                     self.current_item_index -= 1;
                     self.current_field_index = 0;
                     self.current_field = None;
@@ -83,12 +171,37 @@ impl<'de> DocBufDeserializer<'de> {
                     && !self.has_descended
                     && self.current_item_index < num_items - 1
                 {
+                    // println!("Incrementing item index: {}", self.current_item_index);
                     self.has_descended = true;
                     self.current_item_index += 1;
                     self.current_field_index = 0;
+
+                    // skip a field if it has already been visited.
+                    while self.is_field_visited(self.current_item_index, self.current_field_index) {
+                        let num_fields =
+                            self.vtable.num_fields_by_index(self.current_item_index)?;
+                        // println!(
+                        //     "Has visited: Item {}, Field {}",
+                        //     self.current_item_index, self.current_field_index
+                        // );
+                        if self.current_field_index < num_fields - 1 {
+                            self.current_field_index += 1;
+                        } else {
+                            self.current_item_index += 1;
+                            self.current_field_index = 0;
+                            break;
+                        }
+                    }
+
                     self.current_item = None;
                     self.current_field = None;
-                    return self.next_field();
+                    // return self.next_field();
+                } else {
+                    // println!("Current Item Index: {:?}", self.current_item_index);
+                    // println!("Current Field Index: {:?}", self.current_field_index);
+                    // println!("Current Item: {:?}", self.current_item);
+
+                    // println!("Buffer: {:?}", self.buffer);
                 }
             }
         }
@@ -108,6 +221,16 @@ impl<'de> DocBufDeserializer<'de> {
 
     #[inline]
     pub fn set_remaining_items(&mut self, field_type: &VTableFieldType) -> Result<()> {
+        // println!(
+        //     "set_remaining_items {:?}; Buffer: {:?}; Field Type: {:?}",
+        //     self.remaining_items, self.buffer, field_type
+        // );
+
+        if self.buffer.is_empty() {
+            self.remaining_items = Some(0);
+            return Ok(());
+        }
+
         match (&field_type, self.remaining_items) {
             (VTableFieldType::Uuid, None) => {
                 self.remaining_items = Some(15);
@@ -122,9 +245,24 @@ impl<'de> DocBufDeserializer<'de> {
 
                 self.buffer.drain(0..4);
 
+                // println!("Setting Remaining Item Length: {:?}", data_len);
+                self.remaining_items = Some(data_len);
+            }
+            (VTableFieldType::Vec(_) | VTableFieldType::HashMap { .. }, None) => {
+                let data_len = u32::from_le_bytes([
+                    self.buffer[0],
+                    self.buffer[1],
+                    self.buffer[2],
+                    self.buffer[3],
+                ]);
+
+                self.buffer.drain(0..4);
+
+                // println!("Setting Remaining Item Length: {:?}", data_len);
                 self.remaining_items = Some(data_len);
             }
             (_, Some(n)) => {
+                // println!("Decrementing remaining items.");
                 if n == 1 {
                     self.remaining_items = None;
                 } else {
@@ -160,7 +298,10 @@ impl<'de> DocBufDeserializer<'de> {
     // Set the current item based on the current item index
     #[inline]
     pub fn set_current_item(&mut self) -> Result<&'static VTableItem> {
+        // println!("Setting current item to {:?}", self.current_item_index);
+        // let field = self.current_field()?;
         let item = self.vtable.item_by_index(self.current_item_index)?;
+        // self.current_item_index = field.item_index;
         self.current_item = Some(item);
         Ok(item)
     }
@@ -193,6 +334,8 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
 
         let field = self.current_field()?;
 
+        // println!("Current Field: {:?}", field);
+
         // Set the hash map field items to the length of the data.
         if let VTableFieldType::HashMap { .. } = &field.r#type {
             match self.remaining_items {
@@ -201,11 +344,11 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
                         self.buffer[0],
                         self.buffer[1],
                         self.buffer[2],
-                        0,
+                        self.buffer[3],
                     ]));
 
                     // drain the length from the buffer
-                    self.buffer.drain(0..3);
+                    self.buffer.drain(0..4);
                 }
                 Some(0) => {
                     self.remaining_items = None;
@@ -215,6 +358,8 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
                 _ => {}
             }
         }
+
+        // println!("Next Key Seed: Remaining Items: {:?}", self.remaining_items);
 
         seed.deserialize(&mut **self).map(Some)
     }
@@ -226,7 +371,9 @@ impl<'de> MapAccess<'de> for &mut DocBufDeserializer<'de> {
         let value = seed.deserialize(&mut **self);
 
         // Decrement the remaining field items if it is set
-        if let VTableFieldType::HashMap { .. } = &self.current_field()?.r#type {
+        if let VTableFieldType::HashMap { .. } | VTableFieldType::Vec(_) =
+            &self.current_field()?.r#type
+        {
             // Decrement the remaining field items if it is set
             self.remaining_items.as_mut().map(|x| *x -= 1);
         };
@@ -242,14 +389,35 @@ impl<'de> SeqAccess<'de> for DocBufDeserializer<'de> {
     where
         T: DeserializeSeed<'de>,
     {
+        // let item = self.current_item()?;
+        let field = self.current_field()?;
+
+        // println!("Next Element Seed: {field:?}");
+        // println!("Remaining Items: {:?}", self.remaining_items);
+
         if self.buffer.is_empty() {
+            // println!("Buffer is empty");
             return Ok(None);
         }
 
-        let field = self.current_field()?;
+        match &field.r#type {
+            VTableFieldType::Struct(_) => {
+                self.next_field()?;
+            }
+            VTableFieldType::HashMap { .. } => {
+                // println!("Deserialize HashMap");
+            }
+            VTableFieldType::Vec(_) => {
+                // println!("Deserialize Vec");
+                self.set_remaining_items(&field.r#type)?;
 
-        if let VTableFieldType::Struct(_) = &field.r#type {
-            self.next_field()?;
+                // if let Some(remaining) = self.remaining_items {
+                //     println!("Remaining Items: {:?}", remaining);
+                // }
+
+                self.next_field()?;
+            }
+            _ => {}
         }
 
         seed.deserialize(&mut *self).map(Some)
@@ -263,7 +431,10 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        // println!("Deserialize Any");
+
         let field = self.current_field()?;
+        // self.optional_field.as_ref().unwrap_or()
         match &field.r#type {
             VTableFieldType::Struct(_) => {
                 self.next_field()?;
@@ -285,8 +456,9 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
             VTableFieldType::String => self.deserialize_string(visitor),
             VTableFieldType::Bytes => self.deserialize_bytes(visitor),
             VTableFieldType::Str => self.deserialize_str(visitor),
-            VTableFieldType::Vec => self.deserialize_seq(visitor),
+            VTableFieldType::Vec(_) => self.deserialize_seq(visitor),
             VTableFieldType::HashMap { .. } => visitor.visit_map(self),
+            VTableFieldType::Option(_) => self.deserialize_option(visitor),
             VTableFieldType::Uuid => unimplemented!("UUID not implemented"),
         }
     }
@@ -295,6 +467,8 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        // println!("Deserialize Bool");
+
         let value = self.current_field()?.decode(self.buffer)?;
 
         self.next_field()?;
@@ -306,6 +480,8 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        // println!("Deserialize I8");
+
         let value = self.current_field()?.decode(self.buffer)?;
 
         self.next_field()?;
@@ -317,6 +493,8 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        // println!("Deserialize I16");
+
         let value = self.current_field()?.decode(self.buffer)?;
 
         self.next_field()?;
@@ -329,6 +507,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let value = self.current_field()?.decode(self.buffer)?;
+        // println!("deserialize_i32");
 
         // Increment the field index
         self.next_field()?;
@@ -341,6 +520,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let value = self.current_field()?.decode(self.buffer)?;
+        // println!("deserialize_i64");
 
         // Increment the field index
         self.next_field()?;
@@ -353,6 +533,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let value = self.current_field()?.decode(self.buffer)?;
+        // println!("deserialize_i128");
 
         // Increment the field index
         self.next_field()?;
@@ -364,13 +545,8 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let field = self.current_field()?;
-
-        // dbg!("Field: {:?}", field);
-
-        self.set_remaining_items(&field.r#type)?;
-
-        let value = field.decode(self.buffer)?;
+        // println!("Deserialize U8; Buffer: {:?}", self.buffer);
+        let value = self.current_field()?.decode(self.buffer)?;
 
         self.next_field()?;
 
@@ -382,6 +558,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let field = self.current_field()?;
+        // println!("deserialize_u16");
 
         let value = field.decode(self.buffer)?;
 
@@ -395,6 +572,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let value = self.current_field()?.decode(self.buffer)?;
+        // println!("deserialize_u32");
 
         self.next_field()?;
 
@@ -406,6 +584,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let value = self.current_field()?.decode(self.buffer)?;
+        // println!("deserialize_u64");
 
         // Increment the field index
         self.next_field()?;
@@ -421,6 +600,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let value = self.current_field()?.decode(self.buffer)?;
+        // println!("deserialize_u128");
 
         // Increment the field index
         self.next_field()?;
@@ -433,6 +613,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let value = self.current_field()?.decode(self.buffer)?;
+        // println!("deserialize_f32");
 
         // Increment the field index
         self.next_field()?;
@@ -445,6 +626,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let value = self.current_field()?.decode(self.buffer)?;
+        // println!("deserialize_f64");
 
         // Increment the field index
         self.next_field()?;
@@ -464,6 +646,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let field = self.current_field()?;
+        // println!("deserialize_str");
 
         let value: String = field.decode(self.buffer)?;
 
@@ -477,12 +660,13 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let field = self.current_field()?;
+        // println!("deserialize_string");
 
         let value = field.decode(self.buffer)?;
 
         match field.r#type {
             // Ignore Uuid field.
-            VTableFieldType::Uuid => {}
+            VTableFieldType::Uuid | VTableFieldType::HashMap { .. } => {}
             _ => {
                 self.next_field()?;
             }
@@ -495,7 +679,12 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let value: Vec<u8> = self.current_field()?.decode(self.buffer)?;
+        let field = self.current_field()?;
+        // println!("deserialize_bytes");
+
+        // println!("Deserialize Bytes: {:?}", field);
+
+        let value: Vec<u8> = field.decode(self.buffer)?;
 
         self.next_field()?;
 
@@ -507,17 +696,30 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let value = self.current_field()?.decode(self.buffer)?;
+        // println!("deserialize_byte_buf");
 
         self.next_field()?;
 
         visitor.visit_byte_buf(value)
     }
 
-    fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!("deserialize_option")
+        // println!("Deserialize Option");
+        let field = self.current_field()?;
+        match field.decode_option(self.buffer)? {
+            None => {
+                self.next_field()?;
+                return visitor.visit_none();
+            }
+            Some(_) => {
+                self.next_field()?;
+
+                return visitor.visit_some(self);
+            }
+        }
     }
 
     fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>
@@ -545,15 +747,21 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let value = visitor.visit_seq(self)?;
+        // println!("\n\nDeserialize Seq\n\n");
+        // println!("Buffer: {:?}", self.buffer);
+        // let field = self.current_field()?;
 
-        Ok(value)
+        // println!("Field: {field:?}");
+
+        visitor.visit_seq(self)
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
+        // println!("deserialize_tuple");
+
         visitor.visit_seq(self)
     }
 
@@ -573,6 +781,8 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        // println!("Deserialize Map");
+
         visitor.visit_map(self)
     }
 
@@ -585,6 +795,8 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        // println!("Deserializing Struct: {name}");
+
         let current_struct = self.vtable.struct_by_name(name)?;
 
         self.current_item_index = current_struct.item_index;
@@ -610,6 +822,7 @@ impl<'de> serde::de::Deserializer<'de> for &mut DocBufDeserializer<'de> {
         V: Visitor<'de>,
     {
         let field = self.current_field()?;
+        // println!("deserialize_identifier");
 
         match &field.r#type {
             VTableFieldType::Struct(_) => {
